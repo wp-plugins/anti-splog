@@ -97,6 +97,7 @@ We provide comprehensive and guaranteed support on the <a href='http://premium.w
 * Usability/text updates to admin pages
 * Ability to use your own custom wp-signup template by installing in `wp-content/custom-wpsignup.php`
 * Another bug fix in splog review form, make sure to overwrite the `wp-content/blog-suspended.php` file.
+* Depreciated function argument fixes
 
 = 1.0.7 =
 * Bug fix in splog review form, make sure to overwrite the `wp-content/blog-suspended.php` file.
