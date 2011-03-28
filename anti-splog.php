@@ -43,9 +43,7 @@ $ust_api_url = 'http://premium.wpmudev.org/ust-api.php';
 //------------------------------------------------------------------------//
 
 //check for activating
-if ($_GET['key'] == '' || $_GET['key'] === '') {
-	add_action('admin_head', 'ust_make_current');
-}
+add_action('admin_head', 'ust_make_current');
 
 add_action('plugins_loaded', 'ust_localization');
 //wp-signup changes
@@ -152,7 +150,6 @@ function ust_make_current() {
 		// do nothing
 	} else {
 		//update to current version
-		update_site_option( "ust_installed", "no" );
 		update_site_option( "ust_version", $ust_current_version );
 	}
 	ust_global_install();
