@@ -5,14 +5,14 @@ Requires at least: 3.1
 Tested up to: 3.1
 Stable tag: 1.1
 
-The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress
+The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress from WPMU DEV
 
 == Description ==
 
 This is the plugin every Wordpress Multisite or Buddypress admin has been waiting for! Announcing Anti-Splog, the ultimate plugin and service to stop and kill splogs in WordPress Multisite
 [youtube http://www.youtube.com/watch?v=4BR1ai2w-B0&hd=1]
 
-This plugin goes way beyond any existing splog plugin for Multisite because at it's core is the new Anti-Splog API service hosted at WPMU Dev Premium. This means that Anti-Splog not only prevents/limits bots, it also identifies human and existing spammers automatically and with great efficiency.
+This plugin goes way beyond any existing splog plugin for Multisite because at it's core is the new Anti-Splog API service hosted at WPMU DEV Premium. This means that Anti-Splog not only prevents/limits bots, it also identifies human and existing spammers automatically and with great efficiency.
 
 = Four Layers of Protection =
 Anti-Splog works with four layers of protection to provide the ultimate in splog killing power. Up front we have 5 methods to choose from that can limit or stop those evil automated bots that are flooding your Multisite install with splogs. These can be fairly effective, but with our experience on sites like Edublogs, a large number of splogs are manually created. While every other splog prevention plugin stops here and leaves your site unprotected, ours goes 200% further.
