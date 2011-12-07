@@ -1,5 +1,5 @@
 === Anti-Splog ===
-Contributors: WPMUDEV, uglyrobot
+Contributors: WPMUDEV
 Tags: splog, splogs, spam, multisite, buddypress, signup, captcha, wpmu
 Requires at least: 3.1
 Tested up to: 3.1
