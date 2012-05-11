@@ -5,7 +5,7 @@ Plugin URI: http://premium.wpmudev.org/project/anti-splog
 Description: The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress
 Author: Aaron Edwards (Incsub)
 Author URI: http://premium.wpmudev.org
-Version: 1.1.1
+Version: 2.0
 Network: true
 WDP ID: 120
 */
@@ -33,7 +33,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 //------------------------------------------------------------------------//
 
-$ust_current_version = '1.1';
+$ust_current_version = '2.0';
 $ust_api_url = 'http://premium.wpmudev.org/ust-api.php';
 
 //------------------------------------------------------------------------//
@@ -65,26 +65,30 @@ add_action('wpmu_new_blog', 'ust_newblog_notify_siteadmin', 10, 2);
 add_action('init', 'ust_admin_url');
 add_action('admin_init', 'ust_admin_scripts_init');
 add_action('save_post', 'ust_check_post');
-add_action('admin_menu', 'ust_plug_pages');
 add_action('network_admin_menu', 'ust_plug_pages');
-add_action('admin_notices', 'ust_api_warning');
 add_action('network_admin_notices', 'ust_api_warning');
 add_action('network_admin_notices', 'ust_install_notice');
+
+add_action('wp_enqueue_scripts', 'ust_signup_js');
 add_action('signup_blogform', 'ust_signup_fields', 50);
 add_action('bp_before_registration_submit_buttons', 'ust_signup_fields_bp', 50); //buddypress support
 add_filter('wpmu_validate_blog_signup', 'ust_signup_errorcheck');
 add_action('bp_signup_validate', 'ust_signup_errorcheck_bp'); //buddypress support
-add_filter('wpmu_validate_blog_signup', 'ust_signup_multicheck', 1);
-add_action('bp_signup_validate', 'ust_signup_multicheck_bp'); //buddypress support
-add_action('bp_before_account_details_fields', 'ust_signup_multicheck_bp_error_display'); //adds multicheck error message hook
+add_filter('wpmu_validate_user_signup', 'ust_pre_signup_user_check');
+add_filter('wpmu_validate_blog_signup', 'ust_pre_signup_check');
+add_action('bp_signup_validate', 'ust_pre_signup_check_bp'); //buddypress support
+add_action('bp_before_account_details_fields', 'ust_pre_signup_check_bp_error_display'); //adds multicheck error message hook
 add_filter('add_signup_meta', 'ust_signup_meta');
 add_filter('bp_signup_usermeta', 'ust_signup_meta'); //buddypress support
 add_action('signup_header', 'ust_signup_css');
 add_action('ust_check_api_cron', 'ust_check_api'); //cron action
 add_action('plugins_loaded', 'ust_show_widget');
-add_action('muplugins_loaded', 'ust_preview_splog');
 add_action('wp_ajax_ust_ajax', 'ust_do_ajax'); //ajax
-add_filter('site_option_no_anti_spam_nag', create_function('', 'return 1;')); //remove 2.9 spam nag
+add_action('wp_ajax_ust_test_regex', 'ust_test_regex'); //ajax
+
+//handle toolbar menu
+add_action('init', 'ust_toolbar_init');
+add_action('wp_ajax_ust_toggle_blog_flag', 'ust_toolbar_ajax');
 
 register_activation_hook( __FILE__, 'ust_activate_check' );
 
@@ -100,8 +104,8 @@ function ust_activate_check() {
 	//force multisite
 	if ( !is_multisite() )
 	  die( __('Anti-Splog is only compatible with Multisite installs.', 'ust') );
-	else if ( version_compare($wp_version, '3.0.9', '<=') )
-	  die( __('This version of Anti-Splog is only compatible with WordPress 3.1 and greater.', 'ust') );
+	else if ( version_compare($wp_version, '3.2', '<') )
+	  die( __('This version of Anti-Splog is only compatible with WordPress 3.2 and greater.', 'ust') );
 
 }
 
@@ -109,11 +113,7 @@ function ust_admin_url() {
   global $ust_admin_url, $wp_version;
 
   //setup proper urls
-  if ( version_compare($wp_version, '3.0.9', '>') ) {
-    $ust_admin_url = network_admin_url('settings.php?page=ust');
-  } else {
-    $ust_admin_url = network_admin_url('ms-admin.php?page=ust');
-  }
+  $ust_admin_url = network_admin_url('admin.php?page=ust');
 }
 
 function ust_install_notice() {
@@ -151,8 +151,54 @@ function ust_make_current() {
 	} else {
 		//update to current version
 		update_site_option( "ust_version", $ust_current_version );
+		
+		//setup default patterns
+		$default_patterns = array (
+			0 => 
+			array (
+				'regex' => '/[a-z]+[0-9]{1,3}[a-z]+/',
+				'desc' => __('Match domains with digits between words like "some45blog"', 'ust'),
+				'type' => 'domain',
+				'action' => 'splog',
+				'matched' => 0,
+			),
+			1 => 
+			array (
+				'regex' => '/ugg|louboutin|pharma|warez|download|megaupload/i',
+				'desc' => __('Block popular spam words', 'ust'),
+				'type' => 'domain',
+				'action' => 'splog',
+				'matched' => 0,
+			),
+			2 => 
+			array (
+				'regex' => '/\b\d+\b/',
+				'desc' => __('Block domains with only numbers in domain.', 'ust'),
+				'type' => 'domain',
+				'action' => 'block',
+				'matched' => 0,
+			),
+			3 => 
+			array (
+				'regex' => '/\b(ugg|louboutin|pharma|warez|download|megaupload)\b/i',
+				'desc' => __('Check for full words only', 'ust'),
+				'type' => 'title',
+				'action' => 'splog',
+				'matched' => 0,
+			),
+			4 => 
+			array (
+				'regex' => '/[a-z]+[0-9]{1,3}[a-z]+/',
+				'desc' => __('Match usernames with digits between words like "some45blog"', 'ust'),
+				'type' => 'username',
+				'action' => 'splog',
+				'matched' => 0,
+			),
+		);
+		update_site_option( 'ust_patterns', $default_patterns );
+		
+		ust_global_install();
 	}
-	ust_global_install();
 }
 
 function ust_global_install() {
@@ -168,15 +214,15 @@ function ust_global_install() {
 	} else {
 	  //create table
 		$ust_table1 = "CREATE TABLE IF NOT EXISTS `" . $wpdb->base_prefix . "ust` (
-                                  `blog_id` bigint(20) unsigned NOT NULL,
-                                  `last_user_id` bigint(20) NULL DEFAULT NULL,
-                                  `last_ip` varchar(30),
-                                  `last_user_agent` varchar(255),
-                                  `spammed` DATETIME default '0000-00-00 00:00:00',
-                                  `certainty` int(3) NOT NULL default '0',
-                                  `ignore` int(1) NOT NULL default '0',
-                                  PRIMARY KEY  (`blog_id`)
-                                ) ENGINE=MyISAM CHARACTER SET utf8 COLLATE utf8_general_ci;";
+										`blog_id` bigint(20) unsigned NOT NULL,
+										`last_user_id` bigint(20) NULL DEFAULT NULL,
+										`last_ip` varchar(30),
+										`last_user_agent` varchar(255),
+										`spammed` DATETIME default '0000-00-00 00:00:00',
+										`certainty` int(3) NOT NULL default '0',
+										`ignore` int(1) NOT NULL default '0',
+										PRIMARY KEY  (`blog_id`)
+									) ENGINE=MyISAM CHARACTER SET utf8 COLLATE utf8_general_ci;";
     $wpdb->query( $ust_table1 );
 
     //insert every blog_id
@@ -189,12 +235,14 @@ function ust_global_install() {
 
     //default options
     $ust_settings['api_key'] = '';
+	  $ust_settings['block_certainty'] = '';
 	  $ust_settings['certainty'] = 80;
     $ust_settings['post_certainty'] = 90;
 	  $ust_settings['num_signups'] = '';
 	  $ust_settings['strip'] = 0;
 	  $ust_settings['paged_blogs'] = 15;
 	  $ust_settings['paged_posts'] = 3;
+		$ust_settings['hide_adminbar'] = 0;
 	  $ust_settings['keywords'] = array('ugg', 'pharma', 'erecti');
 	  $ust_settings['signup_protect'] = 'none';
 	  update_site_option("ust_settings", $ust_settings);
@@ -202,12 +250,174 @@ function ust_global_install() {
 		update_site_option( "ust_installed", "yes" );
 	}
 }
- 
+
+function ust_toolbar_init() {
+	//check basic stuff
+	if (!current_user_can('manage_sites') || is_network_admin() || is_main_site() || !is_admin_bar_showing())
+		return;
+	
+	//skip if turned off
+	$ust_settings = get_site_option("ust_settings");
+	if (isset($ust_settings['hide_adminbar']) && $ust_settings['hide_adminbar'])
+		return;
+	
+	add_action('admin_bar_menu', 'ust_toolbar_menu', 999);
+	add_action('admin_footer', 'ust_toolbar_js');
+	add_action('wp_footer', 'ust_toolbar_js');
+	add_action('wp_print_scripts', 'ust_toolbar_enqueue_jquery');
+}
+
+function ust_toolbar_menu() {
+	global $wp_admin_bar, $blog_id, $wpdb;
+	$data = get_blog_details($blog_id);
+
+	$wp_admin_bar->add_menu(array(
+		'title' => __('Anti-Splog', 'ust'),
+		'href' => '',
+		'parent' => false,
+		'id' => 'anti_splog',
+	));
+
+	$spam_title = $data->spam ? __('Unsplog', 'ust') : __('Splog', 'ust');
+	$arch_title = $data->archived ? __('Unarchive', 'ust') : __('Archive', 'ust');
+	$wp_admin_bar->add_menu(array(
+		'title' => $spam_title,
+		'href' => '#' . preg_replace('/[^a-z]/', '', strtolower($spam_title)),
+		//'parent' => false,
+		'parent' => 'anti_splog',
+		'id' => 'ust_options_spam',
+		'meta' => array (
+			'onclick' => 'return ust_SendRequest("spam");'
+		),
+	));
+	$reg_ip = $wpdb->get_var("SELECT IP FROM {$wpdb->registration_log} WHERE blog_id={$blog_id}");
+	if ($reg_ip) {
+		$wp_admin_bar->add_menu(array(
+			'title' => sprintf(__('Splog IP: %s', 'ust'), $reg_ip),
+			'href' => network_admin_url('settings.php?page=ust&updated=1&id=' . $bloginfo->blog_id . '&spam_ip=' . $reg_ip),
+			'parent' => 'anti_splog',
+			'id' => 'ust_splog_by_ip',
+			'meta' => array (
+				'onclick' => 'return ust_splog_request("registered");'
+			),
+		));
+	}
+	$wp_admin_bar->add_menu(array(
+		'title' => $arch_title,
+		'href' => '#' . preg_replace('/[^a-z]/', '', strtolower($arch_title)),
+		//'parent' => false,
+		'parent' => 'anti_splog',
+		'id' => 'ust_options_archive',
+		'meta' => array (
+			'onclick' => 'return ust_SendRequest("archive");'
+		),
+	));
+}
+
+function ust_toolbar_enqueue_jquery () {
+	wp_enqueue_script('jquery');
+}
+
+function ust_toolbar_js() {
+	global $blog_id;
+
+	$ajax = admin_url('admin-ajax.php');
+	$error_msg = esc_js(__('Whoops, Something went wrong', 'ust'));
+	$working_msg = "<img src='".admin_url('images/loading.gif')."' /> " . esc_js(__('Working...', 'ust'));
+	$done_msg = esc_js(__('Done! Reloading...', 'ust'));
+	
+	echo <<<EOJs
+<script type="text/javascript">
+var _ust_ajax_url = "{$ajax}";
+function ust_SendRequest (flag) {
+	var $ = jQuery;
+	var target = $("#wp-admin-bar-ust_options_" + flag + " a:first");
+	var text = target.text();
+	var flag = flag ? flag : "spam";
+
+	target.html("{$working_msg}");
+
+	$.post(_ust_ajax_url, {
+		"action": "ust_toggle_blog_flag",
+		"flag": flag,
+		"blog_id": "{$blog_id}"
+	}, function (data) {
+		if (parseInt(data.status)) {
+			target.html("{$done_msg}");
+			window.location = window.location;
+		} else {
+			target.html(text);
+			alert("{$error_msg}");
+		}
+	});
+
+	return false;
+}
+
+function ust_splog_request (tgt) {
+	var $ = jQuery;
+	var target = $("#wp-admin-bar-ust_splog_by_ip a:first");
+	if (!target.length) return false;
+	
+	var data = {
+		"action": 'ust_ajax',
+		"check_ip": target.attr("href")
+	};
+
+	$.post(_ust_ajax_url, data, function(response) {
+		if (response.num) {
+			var answer = confirm("You are about to mark " + 
+				response.num + " blog(s) as spam! There are currently " + 
+				response.numspam + " blog(s) already marked as spam for this IP (" +
+				response.ip + ").\\n\\nAre you sure you want to do this?"
+	);
+			if (answer) {
+					//create post data
+					var data2 = {
+					action: 'ust_ajax',
+					url: data.check_ip
+				};
+		//send ajax
+				$.post(_ust_ajax_url, data2, function () {
+					window.location = window.location;
+				});
+			}
+		}
+	}, "json");
+	return false;
+}
+</script>
+EOJs;
+}
+
+function ust_toolbar_ajax() {
+	if (!current_user_can('manage_sites')) die(0); // Just for super admins
+
+	$blog_id = (int)@$_POST['blog_id'];
+	$flag = @$_POST['flag'];
+	$data = get_blog_details($blog_id);
+
+	switch ($flag) {
+		case "spam":
+			$data->spam = $data->spam ? 0 : 1;
+			break;
+		case "archive":
+			$data->archived = $data->archived ? 0 : 1;
+			break;
+	}
+	$res = (int)update_blog_details($blog_id, $data);
+	header('Content-type: application/json');
+	echo json_encode(array(
+		'status' => $res ? 1 : 0,
+	));
+	exit();
+}
+	
 function ust_wpsignup_init() {
   global $blog_id, $current_site;
 
   //if on main blog
-  if ($current_site->blog_id == $blog_id) {
+  if (is_main_site()) {
     $ust_signup = get_site_option('ust_signup');
     if (!$ust_signup['active'])
       return;
@@ -215,8 +425,10 @@ function ust_wpsignup_init() {
   	add_filter('root_rewrite_rules', 'ust_wpsignup_rewrite');
   	add_filter('query_vars', 'ust_wpsignup_queryvars');
   	add_action('pre_get_posts', 'ust_wpsignup_page');
-  	add_action('init', 'ust_wpsignup_flush_rewrite');
-  	add_action('init', 'ust_wpsignup_change', 99); //run after the flush in case link has expired on already open page
+  	if (!defined('UST_OVERRIDE_SIGNUP_SLUG')) {
+			add_action('init', 'ust_wpsignup_flush_rewrite');
+			add_action('init', 'ust_wpsignup_change', 99); //run after the flush in case link has expired on already open page
+		}
   	add_action('init', 'ust_wpsignup_kill');
   }
 }
@@ -304,11 +516,13 @@ function ust_wpsignup_filter() {
 function ust_wpsignup_shortcode($content) {
   //replace shortcodes in content
   $content = str_replace( '[ust_wpsignup_url]', ust_wpsignup_url(false), $content );
-
+	
+	$new_slug = defined('UST_OVERRIDE_SIGNUP_SLUG') ? UST_OVERRIDE_SIGNUP_SLUG : $ust_signup['slug'];
+	
   //replace unchanged wp-signup.php calls too
   $ust_signup = get_site_option('ust_signup');
   if ($ust_signup['active'])
-    $content = str_replace( 'wp-signup.php', $ust_signup['slug'].'/', $content );
+    $content = str_replace( 'wp-signup.php', trailingslashit($new_slug), $content );
 
 	return $content;
 }
@@ -353,7 +567,7 @@ function ust_blog_spammed($blog_id) {
       $api_data['activate_user_ip'] = $wpdb->get_var("SELECT `IP` FROM {$wpdb->registration_log} WHERE blog_id = '$blog_id'");
       $api_data['user_email'] = $wpdb->get_var("SELECT `email` FROM {$wpdb->registration_log} WHERE blog_id = '$blog_id'");
       $api_data['blog_registered'] = $blog['registered'];
-      $api_data['blog_domain'] = ( constant( "VHOST" ) == 'yes' ) ? str_replace('.'.$current_site->domain, '', $blog['domain']) : $blog['path'];
+      $api_data['blog_domain'] = is_subdomain_install() ? str_replace('.'.$current_site->domain, '', $blog['domain']) : trim($blog['path'], '/');
       $api_data['blog_title'] = get_blog_option($blog_id, 'blogname');
     }
     $last = $wpdb->get_row("SELECT * FROM {$wpdb->base_prefix}ust WHERE blog_id = '$blog_id'");
@@ -406,7 +620,7 @@ function ust_blog_unspammed($blog_id, $ignored=false) {
     $api_data['activate_user_ip'] = $wpdb->get_var("SELECT `IP` FROM {$wpdb->registration_log} WHERE blog_id = '$blog_id'");
     $api_data['user_email'] = $wpdb->get_var("SELECT `email` FROM {$wpdb->registration_log} WHERE blog_id = '$blog_id'");
     $api_data['blog_registered'] = $blog['registered'];
-    $api_data['blog_domain'] = ( constant( "VHOST" ) == 'yes' ) ? str_replace('.'.$current_site->domain, '', $blog['domain']) : $blog['path'];
+    $api_data['blog_domain'] = is_subdomain_install() ? str_replace('.'.$current_site->domain, '', $blog['domain']) : trim($blog['path'], '/');
     $api_data['blog_title'] = get_blog_option($blog_id, 'blogname');
   }
   $last = $wpdb->get_row("SELECT * FROM {$wpdb->base_prefix}ust WHERE blog_id = '$blog_id'");
@@ -438,12 +652,45 @@ function ust_blog_created($blog_id, $user_id) {
   $api_data['user_login'] = $user->user_login;
   $api_data['user_email'] = $user->user_email;
   $api_data['user_registered'] = $user->user_registered;
-  $api_data['blog_domain'] = ( constant( "VHOST" ) == 'yes' ) ? str_replace('.'.$current_site->domain, '', $blog['domain']) : $blog['path'];
+  $api_data['blog_domain'] = is_subdomain_install() ? str_replace('.'.$current_site->domain, '', $blog['domain']) : trim($blog['path'], '/');
   $api_data['blog_title'] = get_blog_option($blog_id, 'blogname');
   $api_data['blog_registered'] = $blog['registered'];
-
-  //don't test if a site admin or supporter or blog-user-creator plugin is creating the blog
-  if (is_super_admin() || strpos($_SERVER['REQUEST_URI'], 'blog-user-creator')) {
+	
+	//check patterns
+	$matched_pattern = false;
+	$ust_patterns = get_site_option("ust_patterns");
+	if (is_array($ust_patterns) ) {
+		foreach ($ust_patterns as $key => $pattern) {
+			if ($pattern['action'] == 'block') continue; //only check spamming rules here
+			$error = false;
+			if ($pattern['type'] == 'domain') { //check domain
+				if ( preg_match( $pattern['regex'], $api_data['blog_domain'] ) ) {
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'title') { //check title
+				if ( preg_match( $pattern['regex'], $api_data['blog_title'] ) ) {
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'username') { //check username
+				if ( preg_match( $pattern['regex'], $api_data['user_login'] ) ) {
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'email') { //check username
+				if ( preg_match( $pattern['regex'], $api_data['user_email'] ) ) {
+					$error = true;
+				}
+			}
+			
+			if ($error) {
+				$matched_pattern = true;
+				$ust_patterns[$key]['matched'] = $pattern['matched'] + 1;
+			}
+		}
+		update_site_option("ust_patterns", $ust_patterns); //save blocked counts
+	}
+	
+  //don't test if a site admin or supporter or blog-user-creator plugin is creating the blog or spammed by pattern matching
+  if (is_super_admin() || strpos($_SERVER['REQUEST_URI'], 'blog-user-creator') || $matched_pattern) {
     $certainty = 0;
   } else {
     //send blog info to API
@@ -463,7 +710,7 @@ function ust_blog_created($blog_id, $user_id) {
 
   //spam blog if certainty is met
   $ust_settings = get_site_option("ust_settings");
-  if ($certainty >= $ust_settings['certainty']) {
+  if ($certainty >= $ust_settings['certainty'] || $matched_pattern) {
     update_blog_option($blog_id, 'ust_auto_spammed', 1);
     update_blog_status($blog_id, "spam", '1');
   }
@@ -480,7 +727,7 @@ function ust_check_post($tmp_post_ID) {
   $api_data = get_option('ust_signup_data');
 
   //only check the first valid post for blogs that were created after plugin installed
-  if (get_option('ust_first_post') || !$api_data || $tmp_post->post_status != 'publish' || $tmp_post->post_type != 'post' || $tmp_post->post_content == '')
+  if (get_option('ust_first_post') || !$api_data || $tmp_post->post_status != 'publish' || !in_array($tmp_post->post_type, array('post', 'page')) || $tmp_post->post_content == '')
     return;
 
   //collect info
@@ -489,7 +736,7 @@ function ust_check_post($tmp_post_ID) {
     $api_data['activate_user_ip'] = $wpdb->get_var("SELECT `IP` FROM {$wpdb->registration_log} WHERE blog_id = '$blog_id'");
     $api_data['user_email'] = $wpdb->get_var("SELECT `email` FROM {$wpdb->registration_log} WHERE blog_id = '$blog_id'");
     $api_data['blog_registered'] = $blog['registered'];
-    $api_data['blog_domain'] = ( constant( "VHOST" ) == 'yes' ) ? str_replace('.'.$current_site->domain, '', $blog['domain']) : $blog['path'];
+    $api_data['blog_domain'] = is_subdomain_install() ? str_replace('.'.$current_site->domain, '', $blog['domain']) : trim($blog['path'], '/');
     $api_data['blog_title'] = get_blog_option($blog_id, 'blogname');
   }
   $last = $wpdb->get_row("SELECT * FROM {$wpdb->base_prefix}ust WHERE blog_id = '$blog_id'");
@@ -498,8 +745,18 @@ function ust_check_post($tmp_post_ID) {
   $api_data['last_user_agent'] = $last->last_user_agent;
 
   //add post title/content
-  $api_data['post_content'] = $tmp_post->post_title . "\n" . $tmp_post->post_content;
-
+  $api_data['post_content'] = $tmp_post->post_title . "\n" . $tmp_post->post_content . "\n";
+	
+	//add tags to the content to scan
+	$tags = wp_get_object_terms($tmp_post_ID, 'post_tag');
+	if ( !empty( $tags ) ) {
+		if ( !is_wp_error( $tags ) ) {
+			foreach ( $product_terms as $term ) {
+				$api_data['post_content'] .= ' ' . $term->name; 
+			}
+		}
+	}
+	
   //send blog info to API
   $result = ust_http_post('check_post', $api_data);
   if ($result) {
@@ -559,36 +816,37 @@ function ust_blog_updated($blog_id) {
 function ust_plug_pages() {
   global $ust_admin_url, $wp_version;
   
-	if ( is_super_admin() ) {
-    if ( version_compare($wp_version, '3.0.9', '>') ) {
-      $page = add_submenu_page('settings.php', __('Anti-Splog', 'ust'), __('Anti-Splog', 'ust'), 10, 'ust', 'ust_admin_output');
-    } else {
-      $page = add_submenu_page('ms-admin.php', __('Anti-Splog', 'ust'), __('Anti-Splog', 'ust'), 10, 'ust', 'ust_admin_output');
-    }
+	$page = add_menu_page(__('Anti-Splog', 'ust'), __('Anti-Splog', 'ust'), 'manage_sites', 'ust', 'ust_admin_moderate', plugins_url('/anti-splog/includes/icon-small.png') );
+	$page = add_submenu_page('ust', __('Site Moderation', 'ust'), __('Moderation', 'ust'), 'manage_sites', 'ust', 'ust_admin_moderate');
 
-	  /* Using registered $page handle to hook script load */
-    add_action('admin_print_scripts-' . $page, 'ust_admin_script');
-    add_action('admin_print_styles-' . $page, 'ust_admin_style');
-  }
-}
-
-function ust_preview_splog() {
-  global $current_blog;
-
-  //temporarily unspams the blog while previewing from Splogs queue
-  if (strpos($_SERVER['HTTP_REFERER'], '?page=ust&tab=splogs'))
-    $current_blog->spam = '0';
+	/* Using registered $page handle to hook script load */
+	add_action('admin_print_scripts-' . $page, 'ust_admin_script');
+	add_action('admin_print_styles-' . $page, 'ust_admin_style');
+	add_action('load-' . $page, 'ust_admin_help');
+	
+	$page = add_submenu_page('ust', __('Anti-Splog Statistics', 'ust'), __('Statistics', 'ust'), 'manage_sites', 'ust-stats', 'ust_admin_stats');
+	add_action('admin_print_scripts-' . $page, 'ust_admin_script_flot');
+	add_action('load-' . $page, 'ust_admin_help');
+	
+	$page = add_submenu_page('ust', __('Anti-Splog Pattern Matching', 'ust'), __('Pattern Matching', 'ust'), 'manage_network_options', 'ust-patterns', 'ust_admin_patterns');
+	add_action('admin_print_scripts-' . $page, 'ust_admin_script');
+	add_action('load-' . $page, 'ust_admin_help');
+	
+	$page = add_submenu_page('ust', __('Anti-Splog Settings', 'ust'), __('Settings', 'ust'), 'manage_network_options', 'ust-settings', 'ust_admin_settings');
+	add_action('load-' . $page, 'ust_admin_help');
 }
 
 function ust_do_ajax() {
 	global $wpdb, $current_site;
 
   //make sure we have permission!
-  if (!is_super_admin())
+  if (!current_user_can('manage_sites'))
 		die();
-
-	$query = parse_url($_POST['url']);
-  parse_str($query['query'], $_GET);
+	
+	if ( isset( $_POST['url'] ) ) {
+		$query = parse_url($_POST['url']);
+		parse_str($query['query'], $_GET);
+	}
 
   //process any actions and messages
 	if ( isset($_GET['spam_user']) ) {
@@ -770,7 +1028,7 @@ function ust_signup_errorcheck($content) {
   
   $ust_settings = get_site_option("ust_settings");
 
-  if($ust_settings['signup_protect'] == 'recaptcha') {
+  if ($ust_settings['signup_protect'] == 'recaptcha') {
 
     //check reCAPTCHA
     $recaptcha = get_site_option('ust_recaptcha');
@@ -781,7 +1039,7 @@ function ust_signup_errorcheck($content) {
   	  $content['errors']->add('recaptcha', __("The reCAPTCHA wasn't entered correctly. Please try again.", 'ust'));
   	}
 
-  } else if($ust_settings['signup_protect'] == 'asirra') {
+  } else if ($ust_settings['signup_protect'] == 'asirra') {
 
     require_once('includes/asirra.php');
     $asirra = new AsirraValidator($_POST['Asirra_Ticket']);
@@ -817,7 +1075,17 @@ function ust_signup_errorcheck($content) {
       }
     }
 
-  }
+  } else if ($ust_settings['signup_protect'] == 'ayah') {
+		
+		$ust_ayah = get_site_option("ust_ayah");
+		require_once("includes/ayah.php");
+		$integration = new AYAH(array("publisher_key" => @$ust_ayah['pubkey'], "scoring_key" => @$ust_ayah['privkey']));
+
+		$score = $integration->scoreResult();
+		if (!$score) {
+			$content['errors']->add('ayah', __("The Are You a Human test wasn't entered correctly. Please try again or contact us if you are still having trouble.", 'ust'));
+		}
+	}
 
 	return $content;
 }
@@ -873,11 +1141,52 @@ function ust_signup_errorcheck_bp() {
       }
     }
 
-  }
+  } else if($ust_settings['signup_protect'] == 'ayah') {
+		
+		$ust_ayah = get_site_option("ust_ayah");
+		require_once("includes/ayah.php");
+		$integration = new AYAH(array("publisher_key" => @$ust_ayah['pubkey'], "scoring_key" => @$ust_ayah['privkey']));
+
+		$score = $integration->scoreResult();
+		if (!$score) {
+			$bp->signup->errors['ayah'] = __("The Are You a Human test wasn't entered correctly. Please try again.", 'ust');
+		}
+	}
 }
 
-//check for multiple signups from the same IP in 24 hours
-function ust_signup_multicheck($content) {
+function ust_pre_signup_user_check($content) {
+ 
+	//check patterns
+	$ust_patterns = get_site_option("ust_patterns");
+	if (is_array($ust_patterns) ) {
+		foreach ($ust_patterns as $key => $pattern) {
+			if ($pattern['action'] != 'block') continue; //only check blocking rules here
+			$error = false;
+			if ($pattern['type'] == 'username') { //check username
+				if ( preg_match( $pattern['regex'], trim($content['user_name']) ) ) {
+					$content['errors']->add('user_name', __("If you are not a spammer please try again with a different username.", 'ust'));
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'email') { //check username
+				if ( preg_match( $pattern['regex'], trim($content['user_email']) ) ) {
+					$content['errors']->add('user_email', __("We think you might be a spambot. If you are not a spammer please contact us or use a different email address.", 'ust'));
+					$error = true;
+				}
+			}
+			
+			if ($error) {
+				$ust_patterns[$key]['matched'] = $pattern['matched'] + 1;
+			}
+		}
+		update_site_option("ust_patterns", $ust_patterns); //save blocked counts
+	}
+	
+  return $content;
+}
+
+
+//check for multiple signups from the same IP in 24 hours or patterns
+function ust_pre_signup_check($content) {
   global $wpdb;
   $ust_settings = get_site_option("ust_settings");
 
@@ -887,11 +1196,47 @@ function ust_signup_multicheck($content) {
     if ($ips > $ust_settings['num_signups'])
       $content['errors']->add('blogname', __("A limited number of signups can be done in a short period of time from your Internet connection. If you are not a spammer please try again in 24 hours.", 'ust'));
   }
+
+	//check patterns
+	$ust_patterns = get_site_option("ust_patterns");
+	if (is_array($ust_patterns) ) {
+		foreach ($ust_patterns as $key => $pattern) {
+			if ($pattern['action'] != 'block') continue; //only check blocking rules here
+			$error = false;
+			if ($pattern['type'] == 'domain') { //check domain
+				if ( preg_match( $pattern['regex'], trim($content['blogname']) ) ) {
+					$content['errors']->add('blogname', __("If you are not a spammer please try again with a different domain.", 'ust'));
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'title') { //check title
+				if ( preg_match( $pattern['regex'], trim($content['blog_title']) ) ) {
+					$content['errors']->add('blog_title', __("If you are not a spammer please try again with a different title.", 'ust'));
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'username' && isset($_POST["user_name"])) { //check username
+				if ( preg_match( $pattern['regex'], trim($_POST["user_name"]) ) ) {
+					$content['errors']->add('blogname', __("If you are not a spammer please try again with a different username.", 'ust'));
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'email' && isset($_POST["user_email"])) { //check username
+				if ( preg_match( $pattern['regex'], trim($_POST["user_email"]) ) ) {
+					$content['errors']->add('blogname', __("We think you might be a spambot. If you are not a spammer please contact us or use a different email address.", 'ust'));
+					$error = true;
+				}
+			}
+			
+			if ($error) {
+				$ust_patterns[$key]['matched'] = $pattern['matched'] + 1;
+			}
+		}
+		update_site_option("ust_patterns", $ust_patterns); //save blocked counts
+	}
+	
   return $content;
 }
 
 //check for multiple signups from the same IP in 24 hours buddypress
-function ust_signup_multicheck_bp() {
+function ust_pre_signup_check_bp() {
   global $wpdb, $bp;
   $ust_settings = get_site_option("ust_settings");
 
@@ -901,9 +1246,48 @@ function ust_signup_multicheck_bp() {
     if ($ips > $ust_settings['num_signups'])
       $bp->signup->errors['multicheck'] = __("A limited number of signups can be done in a short period of time from your Internet connection. If you are not a spammer please try again in 24 hours.", 'ust');
   }
+	
+	//only check for blog signups
+	if ( !(isset($_POST['signup_with_blog']) && $_POST['signup_with_blog']) )
+		return;
+	
+	//check patterns
+	$ust_patterns = get_site_option("ust_patterns");
+	if (is_array($ust_patterns) ) {
+		foreach ($ust_patterns as $key => $pattern) {
+			if ($pattern['action'] != 'block') continue; //only check blocking rules here
+			$error = false;
+			if ($pattern['type'] == 'domain' && isset($_POST["signup_blog_url"])) { //check domain
+				if ( preg_match( $pattern['regex'], trim($_POST["signup_blog_url"]) ) ) {
+					$bp->signup->errors['blogname'] = __("If you are not a spammer please try again with a different domain.", 'ust');
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'title' && isset($_POST["signup_blog_title"])) { //check title
+				if ( preg_match( $pattern['regex'], trim($_POST["signup_blog_title"]) ) ) {
+					$bp->signup->errors['blog_title'] = __("If you are not a spammer please try again with a different title.", 'ust');
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'username' && isset($_POST["signup_username"])) { //check username
+				if ( preg_match( $pattern['regex'], trim($_POST["signup_username"]) ) ) {
+					$bp->signup->errors['signup_username'] = __("If you are not a spammer please try again with a different username.", 'ust');
+					$error = true;
+				}
+			} else if ($pattern['type'] == 'email' && isset($_POST["signup_email"])) { //check username
+				if ( preg_match( $pattern['regex'], trim($_POST["signup_email"]) ) ) {
+					$bp->signup->errors['signup_email'] = __("We think you might be a spambot. If you are not a spammer please contact us or use a different email address.", 'ust');
+					$error = true;
+				}
+			}
+			
+			if ($error) {
+				$ust_patterns[$key]['matched'] = $pattern['matched'] + 1;
+			}
+		}
+		update_site_option("ust_patterns", $ust_patterns); //save blocked counts
+	}
 }
 
-function ust_signup_multicheck_bp_error_display() {
+function ust_pre_signup_check_bp_error_display() {
   ?>
   <div class="register-section" id="antisplog-multicheck">
     <?php do_action( 'bp_multicheck_errors' ) ?>
@@ -936,9 +1320,9 @@ function ust_newblog_notify_siteadmin( $blog_id, $deprecated = '' ) {
 	$blogname = get_option( 'blogname' );
 	$siteurl = get_option( 'siteurl' );
 	restore_current_blog();
-	$spam_url = clean_url("$ust_admin_url&spam_blog=1&id=$blog_id&updated=1&updatedmsg=Blog+marked+as+spam%21" );
-	$ust_url = clean_url($ust_admin_url);
-	$options_site_url = clean_url( network_admin_url("settings.php") );
+	$spam_url = esc_url("$ust_admin_url&spam_blog=1&id=$blog_id&updated=1&updatedmsg=Blog+marked+as+spam%21" );
+	$ust_url = esc_url($ust_admin_url);
+	$options_site_url = esc_url( network_admin_url("admin.php") );
 
 	$msg = sprintf( __( "New Blog: %1s
 URL: %2s
@@ -985,7 +1369,8 @@ function ust_wpsignup_url($echo=true) {
   global $current_site;
   $ust_signup = get_site_option('ust_signup');
   $original_url = network_home_url( 'wp-signup.php' );
-  $new_url = network_home_url( trailingslashit($ust_signup['slug']) );
+	$new_slug = defined('UST_OVERRIDE_SIGNUP_SLUG') ? UST_OVERRIDE_SIGNUP_SLUG : $ust_signup['slug'];
+  $new_url = network_home_url( trailingslashit($new_slug) );
 
   if (!$ust_signup['active']) {
     if ($echo) {
@@ -1000,6 +1385,16 @@ function ust_wpsignup_url($echo=true) {
       return $new_url;
     }
   }
+}
+
+function ust_signup_js() {
+
+	if ( is_admin() || false === strpos( $_SERVER['SCRIPT_NAME'], 'wp-signup.php') )
+		return false;
+
+	$ust_settings = get_site_option("ust_settings");
+	if ($ust_settings['signup_protect'] == 'ayah')
+		wp_enqueue_script('jquery');
 }
 
 function ust_signup_fields($errors) {
@@ -1077,8 +1472,22 @@ function ust_signup_fields($errors) {
       echo '</p>&nbsp;<br />';
     }
 
-  }
-
+  } else if($ust_settings['signup_protect'] == 'ayah') {
+		
+		$ust_ayah = get_site_option("ust_ayah");
+		require_once("includes/ayah.php");
+		$integration = new AYAH(array("publisher_key" => @$ust_ayah['pubkey'], "scoring_key" => @$ust_ayah['privkey']));
+		
+    if ( $errmsg = $errors->get_error_message('ayah') ) {
+  		echo '<p class="error">'.$errmsg.'</p>';
+  	}
+		
+		//have to add some jQuery here to change submit button name to prevent errors
+		echo $integration->getPublisherHTML();
+		?>
+		<script type="text/javascript">jQuery(document).ready(function($) {$('input.submit').attr('name', 'submit_site');});</script>
+		<?php
+	}
 }
 
 function ust_signup_fields_bp() {
@@ -1089,7 +1498,7 @@ function ust_signup_fields_bp() {
     $recaptcha = get_site_option('ust_recaptcha');
     require_once('includes/recaptchalib.php');
 
-    echo '<div class="register-section" id="antisplog">';
+    echo '<div class="register-section" id="blog-details-section">';
     echo "<script type='text/javascript'>var RecaptchaOptions = { theme : '{$recaptcha['theme']}', lang : '{$recaptcha['lang']}' , tabindex : 30 };</script>";
     echo '<label>'.__('Human Verification:', 'ust').'</label>';
     do_action( 'bp_recaptcha_errors' );
@@ -1099,7 +1508,7 @@ function ust_signup_fields_bp() {
 
   } else if($ust_settings['signup_protect'] == 'asirra') {
 
-    echo '<div class="register-section" id="antisplog">';
+    echo '<div class="register-section" id="blog-details-section">';
     echo '<label>'.__('Human Verification:', 'ust').'</label>';
     do_action( 'bp_asirra_errors' );
     echo '<div id="asirraError"></div>';
@@ -1133,7 +1542,7 @@ function ust_signup_fields_bp() {
           }
           </script>';
     echo '</div>';
-    echo '<input type="hidden" name="signup_submit"value="1" />';
+    echo '<input type="hidden" name="signup_submit" value="1" />';
     
   } else if ($ust_settings['signup_protect'] == 'questions') {
 
@@ -1155,7 +1564,17 @@ function ust_signup_fields_bp() {
       echo '</div>';
     }
 
-  }
+  } else if ($ust_settings['signup_protect'] == 'ayah') {
+		
+		$ust_ayah = get_site_option("ust_ayah");
+		require_once("includes/ayah.php");
+		$integration = new AYAH(array("publisher_key" => @$ust_ayah['pubkey'], "scoring_key" => @$ust_ayah['privkey']));
+		
+		echo '<div class="register-section" id="blog-details-section">';
+    do_action( 'bp_ayah_errors' );
+		echo $integration->getPublisherHTML();
+		echo '</div>';
+	}
 
 }
 
@@ -1192,6 +1611,13 @@ function ust_admin_scripts_init() {
   wp_register_script('anti-splog', WP_PLUGIN_URL.'/anti-splog/includes/anti-splog.js', array('jquery'), $ust_current_version );
 }
 
+function ust_admin_script_flot() {
+	global $ust_current_version;
+  wp_enqueue_script('flot', plugins_url('/anti-splog/includes/jquery.flot.min.js'), array('jquery'), $ust_current_version );
+	wp_enqueue_script('flot-xcanvas', plugins_url('/anti-splog/includes/excanvas.pack.js'), array('jquery', 'flot'), $ust_current_version );
+	wp_enqueue_script('flot-stack', plugins_url('/anti-splog/includes/jquery.flot.stack.min.js'), array('jquery', 'flot'), $ust_current_version );
+}
+
 function ust_admin_script() {
   wp_enqueue_script('thickbox');
   wp_enqueue_script('anti-splog');
@@ -1201,1346 +1627,26 @@ function ust_admin_style() {
   wp_enqueue_style('thickbox');
 }
 
-//------------------------------------------------------------------------//
-
-//---Page Output Functions------------------------------------------------//
-
-//------------------------------------------------------------------------//
-
-function ust_admin_output() {
-	global $wpdb, $current_user, $current_site, $ust_admin_url;
-
-	if(!is_super_admin()) {
-		echo "<p>" . __('Nice Try...', 'ust') . "</p>";  //If accessed properly, this message doesn't appear.
+function ust_admin_help() {
+	global $current_site;
+	
+	$current_screen = get_current_screen();
+	
+	//check for WP 3.3+
+	if (!method_exists(get_current_screen(), 'add_help_tab'))
 		return;
-	}
-
-	//handle notice dismissal
-	if (isset($_GET['dismiss'])) {
-	  update_site_option( 'ust_key_dismiss', strtotime("+1 month") );
-    ?><div class="updated fade"><p><?php _e('Notice dismissed.', 'ust'); ?></p></div><?php
-	}
-			
-	//process any actions and messages
-	if ( isset($_GET['spam_user']) ) {
-	  //spam a user and all blogs they are associated with
-		//don't spam site admin
-		$user_info = get_userdata((int)$_GET['spam_user']);
-		if (!is_super_admin($user_info->user_login)) {
-  		$blogs = get_blogs_of_user( (int)$_GET['spam_user'], true );
-  		foreach ( (array) $blogs as $key => $details ) {
-  			if ( $details->userblog_id == $current_site->blog_id ) { continue; } // main blog not a spam !
-  			update_blog_status( $details->userblog_id, "spam", '1' );
-  			set_time_limit(60);
-  		}
-  		update_user_status( (int)$_GET['spam_user'], "spam", '1' );
-		  $_GET['updatedmsg'] = sprintf(__('%s blog(s) spammed for user!', 'ust'), count($blogs));
-  	}
-
-	} else if ( isset($_GET['spam_ip']) ) {
-	  //spam all blogs created or modified with the IP address
-	  $spam_ip = addslashes($_GET['spam_ip']);
-	  $query = "SELECT b.blog_id
-        				FROM {$wpdb->blogs} b, {$wpdb->registration_log} r, {$wpdb->base_prefix}ust u
-        				WHERE b.site_id = '{$wpdb->siteid}'
-        				AND b.blog_id = r.blog_id
-        				AND b.blog_id = u.blog_id
-        				AND b.spam = 0
-        				AND (r.IP = '$spam_ip' OR u.last_ip = '$spam_ip')";
-  	$blogs = $wpdb->get_results( $query, ARRAY_A );
-		foreach ( (array) $blogs as $blog ) {
-      if ( $blog['blog_id'] == $current_site->blog_id ) { continue; } // main blog not a spam !
-			update_blog_status( $blog['blog_id'], "spam", '1' );
-			set_time_limit(60);
-		}
-		$_GET['updatedmsg'] = sprintf(__('%s blog(s) spammed for %s!', 'ust'), count($blogs), $spam_ip);
-
-	} else if ( isset($_GET['ignore_blog']) ) {
-	  //ignore a single blog so it doesn't show up on the possible spam list
-		ust_blog_ignore((int)$_GET['id']);
-
-	} else if ( isset($_GET['unignore_blog']) ) {
-	  //unignore a single blog so it can show up on the possible spam list
-		ust_blog_unignore((int)$_GET['id']);
-
-  } else if ( isset($_GET['spam_blog']) ) {
-	  //spam a single blog
-	  update_blog_status( (int)$_GET['id'], "spam", '1' );
-
-	} else if (isset($_GET['unspam_blog'])) {
-
-    update_blog_status( (int)$_GET['id'], "spam", '0' );
-    ust_blog_ignore( (int)$_GET['id'], false );
-
-  } else if ( $_GET['action'] == 'all_notspam' ) {
-
-    $_GET['updatedmsg'] = __('Blogs marked as not spam.', 'ust');
-
-	} else if ($_GET['action'] == 'allblogs') {
-
-		foreach ( (array) $_POST['allblogs'] as $key => $val ) {
-			if( $val != '0' && $val != $current_site->blog_id ) {
-				if ( isset($_POST['allblog_ignore']) ) {
-					$_GET['updatedmsg'] = __('Selected Blogs Ignored.', 'ust');
-					ust_blog_ignore($val);
-					set_time_limit(60);
-        } else if ( isset($_POST['allblog_unignore']) ) {
-					$_GET['updatedmsg'] = __('Selected Blogs Un-ignored.', 'ust');
-					ust_blog_unignore($val);
-					set_time_limit(60);
-				} else if ( isset($_POST['allblog_spam']) ) {
-				  $_GET['updatedmsg'] = __('Blogs marked as spam.', 'ust');
-					update_blog_status( $val, "spam", '1' );
-					set_time_limit(60);
-				}
-			}
-		}
-
-  } else if ($_GET['action'] == 'delete') {
-
-    $_GET['updatedmsg'] = __('Blog Deleted!', 'ust');
-
-  }
-
-	if (isset($_GET['updated']) && $_GET['updatedmsg']) {
-		?><div id="message" class="updated fade"><p><?php echo urldecode($_GET['updatedmsg']); ?></p></div><?php
-	}
-	?>
-
-  <div class="wrap">
-  <div class="icon32"><img src="<?php echo plugins_url('/anti-splog/includes/icon-large.png'); ?>" /></div>
-  <h2><?php _e('Anti-Splog', 'ust') ?></h2>
-	<ul class="subsubsub">
-  <?php
-  $tab = ( !empty($_GET['tab']) ) ? $_GET['tab'] : 'queue';
-
-	$tabs = array(
-		'splogs'    => __('Recent Splogs', 'ust'),
-		'ignored'   => __('Ignored Blogs', 'ust'),
-		'settings'  => __('Settings', 'ust'),
-		'help'  => __('Help', 'ust')
-	);
-	$tabhtml = array();
-
-  // If someone wants to remove or add a tab
-	$tabs = apply_filters( 'ust_tabs', $tabs );
-
-	$class = ( 'queue' == $tab ) ? ' class="current"' : '';
-	$tabhtml[] = '		<li><a href="' . $ust_admin_url . '"' . $class . '>' . __('Suspected Blogs', 'ust') . '</a>';
-
-	foreach ( $tabs as $stub => $title ) {
-		$class = ( $stub == $tab ) ? ' class="current"' : '';
-		$tabhtml[] = '		<li><a href="' . $ust_admin_url .'&amp;tab=' . $stub . '"' . $class . ">$title</a>";
-	}
-
-	echo implode( " |</li>\n", $tabhtml ) . '</li>';
-  ?>
-
-	</ul>
-	<div class="clear"></div>
-	<?php
-	switch( $tab ) {
-		//---------------------------------------------------//
-		case "queue":
-
-		  ?><h3><?php _e('Suspected Blogs', 'ust') ?></h3><?php
-
-      $ust_settings = get_site_option("ust_settings");
-		  $expire = get_site_option("ust_key_dismiss");
-		  if (!$ust_settings['api_key'])
-		    echo "<div id='ust-warning' class='error fade'><p>".sprintf(__('You must enable the Anti-Splog API by <a href="%1$s">entering your WPMU DEV Premium API key</a> to be able to use this feature of the plugin.', 'ust'), "$ust_admin_url&tab=settings"). "</p></div>";
-
-		  _e('<p>This is the moderation queue for suspicious blogs. When you are sure a blog is spam, mark it so. If it is definitely a valid blog you should "ignore" it. It is best to leave blogs in here until you are sure whether they are spam or not spam, as the system learns from both actions.</p>', 'ust');
-
-      $apage = isset( $_GET['apage'] ) ? intval( $_GET['apage'] ) : 1;
-  		$num = isset( $_GET['num'] ) ? intval( $_GET['num'] ) : $ust_settings['paged_blogs'];
-  		$page_link = ($apage > 1) ? '&amp;apage='.$apage : '';
-  		//get sort
-  		if ($_GET['orderby'] == 'lastupdated')
-        $order_by = 'b.last_updated DESC';
-      else if ($_GET['orderby'] == 'registered')
-        $order_by = 'b.registered DESC';
-      else
-        $order_by = 'u.certainty DESC, b.last_updated DESC';
-
-  		$blogname_columns = ( constant( "VHOST" ) == 'yes' ) ? __('Domain') : __('Path');
-
-  		if (is_array($ust_settings['keywords']) && count($ust_settings['keywords'])) {
-        foreach ($ust_settings['keywords'] as $word)
-          $keywords[] = "`post_content` LIKE '%".addslashes(trim($word))."%'";
-
-        $keyword_string = implode($keywords, ' OR ');
-      }
-
-      //if the Post Indexer plugin is installed and keywords are set
-      if (function_exists('post_indexer_post_insert_update') && $keyword_string) {
-
-    		$query = "SELECT *
-                  FROM {$wpdb->blogs} b
-                    JOIN {$wpdb->registration_log} r ON b.blog_id = r.blog_id
-                    JOIN {$wpdb->base_prefix}ust u ON b.blog_id = u.blog_id
-                    LEFT JOIN (SELECT `blog_id` as bid, COUNT( `site_post_id` ) AS total FROM `{$wpdb->base_prefix}site_posts` WHERE $keyword_string GROUP BY blog_id) as s ON b.blog_id = s.bid
-                  WHERE b.site_id = '{$wpdb->siteid}'
-                    AND b.spam = '0' AND b.deleted = '0' AND b.archived = '0'
-                    AND u.`ignore` = '0' AND b.blog_id != '{$current_site->blog_id}'
-                    AND (u.certainty > 0 OR s.total > 0)
-                  ORDER BY s.total DESC, u.certainty DESC, b.last_updated DESC";
-
-    		$total = $wpdb->get_var( "SELECT COUNT(b.blog_id)
-                          				FROM {$wpdb->blogs} b
-                                    JOIN {$wpdb->registration_log} r ON b.blog_id = r.blog_id
-                                    JOIN {$wpdb->base_prefix}ust u ON b.blog_id = u.blog_id
-                                    LEFT JOIN (SELECT `blog_id`, COUNT( `site_post_id` ) AS total FROM `{$wpdb->base_prefix}site_posts` WHERE $keyword_string GROUP BY blog_id) as s ON b.blog_id = s.blog_id
-                                  WHERE b.site_id = '{$wpdb->siteid}'
-                                    AND b.spam = '0' AND b.deleted = '0' AND b.archived = '0'
-                                    AND u.`ignore` = '0' AND b.blog_id != '{$current_site->blog_id}'
-                                    AND (u.certainty > 0 OR s.total > 0)");
-
-        $posts_columns = array(
-    			'id'           => __('ID', 'ust'),
-    			'blogname'     => $blogname_columns,
-    			'ips'          => __('IPs', 'ust'),
-    			'users'        => __('Blog Users', 'ust'),
-    			'keywords'     => __('Keywords', 'ust'),
-    			'certainty'    => __('Splog Certainty', 'ust'),
-    			'lastupdated'  => __('Last Updated'),
-    			'registered'   => __('Registered'),
-          'posts'        => __('Recent Posts', 'ust')
-    		);
-
-      } else { //no post indexer
-
-        $query = "SELECT *
-                  FROM {$wpdb->blogs} b
-                    JOIN {$wpdb->registration_log} r ON b.blog_id = r.blog_id
-                    JOIN {$wpdb->base_prefix}ust u ON b.blog_id = u.blog_id
-                  WHERE b.site_id = '{$wpdb->siteid}'
-                    AND b.spam = '0' AND b.deleted = '0' AND b.archived = '0'
-                    AND u.ignore = '0' AND b.blog_id != '{$current_site->blog_id}'
-                    AND u.certainty > 0
-                  ORDER BY $order_by";
-
-    		$total = $wpdb->get_var( "SELECT COUNT(b.blog_id)
-                          				FROM {$wpdb->blogs} b
-                                    JOIN {$wpdb->registration_log} r ON b.blog_id = r.blog_id
-                                    JOIN {$wpdb->base_prefix}ust u ON b.blog_id = u.blog_id
-                                  WHERE b.site_id = '{$wpdb->siteid}'
-                                    AND b.spam = '0' AND b.deleted = '0' AND b.archived = '0'
-                                    AND u.ignore = '0' AND b.blog_id != '{$current_site->blog_id}'
-                                    AND u.certainty > 0");
-
-    		$posts_columns = array(
-    			'id'           => __('ID', 'ust'),
-    			'blogname'     => $blogname_columns,
-    			'ips'          => __('IPs', 'ust'),
-    			'users'        => __('Blog Users', 'ust'),
-    			'certainty'    => __('Splog Certainty', 'ust'),
-    			'lastupdated'  => '<a href="'.$ust_admin_url.$page_link.'&orderby=lastupdated">'.__('Last Updated').'</a>',
-    			'registered'   => '<a href="'.$ust_admin_url.$page_link.'&orderby=registered">'.__('Registered').'</a>',
-          'posts'        => __('Recent Posts', 'ust')
-    		);
-      }
-
-  		$query .= " LIMIT " . intval( ( $apage - 1 ) * $num) . ", " . intval( $num );
-
-  		$blog_list = $wpdb->get_results( $query, ARRAY_A );
-
-  		$blog_navigation = paginate_links( array(
-  			'base' => add_query_arg( 'apage', '%#%' ).$url2,
-  			'format' => '',
-  			'total' => ceil($total / $num),
-  			'current' => $apage
-  		));
-  		if ($_GET['order_by'])
-  		  $page_link = $page_link . '&orderby='.urlencode($_GET['orderby']);
-  		?>
-
-  		<form id="form-blog-list" action="<?php echo $ust_admin_url . $page_link; ?>&amp;action=allblogs&amp;updated=1" method="post">
-
-  		<div class="tablenav">
-  			<?php if ( $blog_navigation ) echo "<div class='tablenav-pages'>$blog_navigation</div>"; ?>
-
-  			<div class="alignleft">
-  				<input type="submit" value="<?php _e('Ignore', 'ust') ?>" name="allblog_ignore" class="button-secondary allblog_ignore" />
-  				<input type="submit" value="<?php _e('Mark as Spam') ?>" name="allblog_spam" class="button-secondary allblog_spam" />
-  				<br class="clear" />
-  			</div>
-  		</div>
-
-  		<br class="clear" />
-
-  		<table width="100%" cellpadding="3" cellspacing="3" class="widefat">
-  			<thead>
-  				<tr>
-  				<th scope="col" class="check-column"><input type="checkbox" /></th>
-  				<?php foreach($posts_columns as $column_id => $column_display_name) {
-  					$col_url = $column_display_name;
-  					?>
-  					<th scope="col"><?php echo $col_url ?></th>
-  				<?php } ?>
-  				</tr>
-  			</thead>
-  			<tbody id="the-list">
-  			<?php
-  			if ($blog_list) {
-  				$bgcolor = $class = '';
-  				$preview_id = 0;
-  				foreach ($blog_list as $blog) {
-  					$class = ('alternate' == $class) ? '' : 'alternate';
-
-  					echo '<tr class="'.$class.' blog-row" id="bid-'.$blog['blog_id'].'">';
-
-  					$blogname = ( constant( "VHOST" ) == 'yes' ) ? str_replace('.'.$current_site->domain, '', $blog['domain']) : $blog['path'];
-  					foreach( $posts_columns as $column_name=>$column_display_name ) {
-  						switch($column_name) {
-  							case 'id': ?>
-  								<th scope="row" class="check-column">
-  									<input type='checkbox' id='blog_<?php echo $blog['blog_id'] ?>' name='allblogs[]' value='<?php echo $blog['blog_id'] ?>' />
-  								</th>
-  								<th scope="row">
-  									<?php echo $blog['blog_id']; ?>
-  								</th>
-  							<?php
-  							break;
-
-  							case 'blogname': ?>
-  								<td valign="top">
-  									<a title="<?php _e('Preview', 'ust'); ?>" href="http://<?php echo $blog['domain'].$blog['path']; ?>?KeepThis=true&TB_iframe=true&height=450&width=900" class="thickbox"><?php echo $blogname; ?></a>
-  									<br />
-  									<div class="row-actions">
-  										<?php echo '<a class="delete ust_ignore" href="'.$ust_admin_url.$page_link.'&amp;ignore_blog=1&amp;id=' . $blog['blog_id'] . '&amp;updated=1&amp;updatedmsg=' . urlencode( __('Blog Ignored!', 'ust')).'">' . __('Ignore', 'ust') . '</a>'; ?> |
-  										<?php echo '<a class="delete ust_spam" href="'.$ust_admin_url.$page_link.'&amp;spam_blog=1&amp;id=' . $blog['blog_id'] . '&amp;updated=1&amp;updatedmsg=' . urlencode( __('Blog marked as spam!', 'ust')).'">' . __('Spam') . '</a>'; ?>
-  									</div>
-  								</td>
-  							<?php
-  							break;
-
-                case 'ips':
-                  $result = $wpdb->get_row("SELECT user_login, spam FROM " . $wpdb->base_prefix . "users WHERE ID = '" . $blog['last_user_id'] . "'");
-                  $user_login = $result->user_login;
-                  $user_spam = $result->spam;
-                ?>
-  								<td valign="top">
-  									Registered: <a title="<?php _e('Search for IP', 'ust') ?>" href="sites.php?action=blogs&amp;s=<?php echo $blog['IP'] ?>&blog_ip=1" class="edit"><?php echo $blog['IP']; ?></a>
-                    <small class="row-actions"><a class="ust_spamip" title="<?php _e('Spam all blogs tied to this IP', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&id=<?php echo $blog['blog_id']; ?>&spam_ip=<?php echo $blog['IP']; ?>"><?php _e('Spam', 'ust') ?></a></small><br />
-                  <?php if ($blog['last_user_id']) : ?>
-                    <?php $spm_class = ($user_spam) ? ' style="color:red;"' : ''; ?>
-                    Last User: <a<?php echo $spm_class ?> title="<?php _e('Search for User Blogs', 'ust') ?>" href="users.php?s=<?php echo $user_login; ?>" class="edit"><?php echo $user_login; ?></a>
-                    <?php if ($user_spam == 0) : ?><small class="row-actions"><a class="ust_spamuser" title="<?php _e('Spam all blogs tied to this User', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&spam_user=<?php echo $blog['last_user_id']; ?>"><?php _e('Spam', 'ust') ?></a></small><?php endif; ?>
-                    <br />
-                  <?php endif; ?>
-                  <?php if ($blog['last_ip']) : ?>
-                    Last IP: <a title="<?php _e('Search for IP', 'ust') ?>" href="sites.php?action=blogs&amp;s=<?php echo $blog['last_ip']; ?>&blog_ip=1" class="edit"><?php echo $blog['last_ip']; ?></a>
-                    <small class="row-actions"><a class="ust_spamip" title="<?php _e('Spam all blogs tied to this IP', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&id=<?php echo $blog['blog_id']; ?>&spam_ip=<?php echo $blog['last_ip']; ?>"><?php _e('Spam', 'ust') ?></a></small>
-  								<?php endif; ?>
-                  </td>
-  							<?php
-  							break;
-
-  							case 'users': ?>
-  								<td valign="top">
-  									<?php
-                  	$blog_prefix = $wpdb->get_blog_prefix( $blog['blog_id'] );
-                  	$blogusers = $wpdb->get_results( "SELECT user_id, user_id AS ID, user_login, display_name, user_email, spam, meta_value FROM $wpdb->users, $wpdb->usermeta WHERE {$wpdb->users}.ID = {$wpdb->usermeta}.user_id AND meta_key = '{$blog_prefix}capabilities' ORDER BY {$wpdb->usermeta}.user_id" );
-  									if ( is_array( $blogusers ) ) {
-  										$blogusers_warning = '';
-  										if ( count( $blogusers ) > 5 ) {
-  											$blogusers = array_slice( $blogusers, 0, 5 );
-  											$blogusers_warning = __( 'Only showing first 5 users.' ) . ' <a href="http://' . $blog[ 'domain' ] . $blog[ 'path' ] . 'wp-admin/users.php">' . __( 'More' ) . '</a>';
-  										}
-  										foreach ( $blogusers as $key => $val ) {
-                        $spm_class = ($val->spam) ? ' style="color:red;"' : '';
-  											echo '<a'.$spm_class.' title="Edit User: ' . $val->display_name . ' ('.$val->user_email.')" href="user-edit.php?user_id=' . $val->user_id . '">' . $val->user_login . '</a> ';
-                        echo '<small class="row-actions"><a title="' . __('All Blogs of User', 'ust') . '" href="users.php?s=' . $val->user_login . '">' . __('Blogs', 'ust') . '</a>';
-                        if ($val->spam == 0)
-                          echo ' | <a class="ust_spamuser" title="' . __('Spam all blogs tied to this User', 'ust') . '" href="'.$ust_admin_url.$page_link.'&updated=1&spam_user=' . $val->user_id . '">' . __('Spam', 'ust') . '</a></small>';
-                        echo '<br />';
-                      }
-  										if( $blogusers_warning != '' ) {
-  											echo '<strong>' . $blogusers_warning . '</strong><br />';
-  										}
-  									}
-  									?>
-  								</td>
-  							<?php
-  							break;
-
-                case 'certainty': ?>
-  								<td valign="top">
-  									<?php echo $blog['certainty']; ?>%
-  								</td>
-  							<?php
-  							break;
-
-  							case 'keywords':  //only called when post indexer is installed ?>
-  								<td valign="top">
-  									<?php echo ($blog['total']) ? $blog['total'] : 0; ?>
-  								</td>
-  							<?php
-  							break;
-
-  							case 'lastupdated': ?>
-  								<td valign="top">
-  									<?php echo ( $blog['last_updated'] == '0000-00-00 00:00:00' ) ? __("Never") : mysql2date(__('Y-m-d \<\b\r \/\> g:i:s a'), $blog['last_updated']); ?>
-  								</td>
-  							<?php
-  							break;
-
-  							case 'registered': ?>
-  								<td valign="top">
-  									<?php echo mysql2date(__('Y-m-d \<\b\r \/\> g:i:s a'), $blog['registered']); ?>
-  								</td>
-  							<?php
-  							break;
-
-  							case 'posts':
-  							  $query = "SELECT ID, post_title, post_excerpt, post_content, post_author, post_date FROM `{$wpdb->base_prefix}{$blog['blog_id']}_posts` WHERE post_status = 'publish' AND post_type = 'post' AND ID != '1' ORDER BY post_date DESC LIMIT {$ust_settings['paged_posts']}";
-                  $posts = $wpdb->get_results( $query, ARRAY_A );
-                ?>
-  								<td valign="top">
-  									<?php
-  									if (is_array($posts) && count($posts)) {
-                      foreach ($posts as $post) {
-                        $post_preview[$preview_id] = $post['post_content'];
-                        $link = '#TB_inline?height=440&width=600&inlineId=post_preview_'.$preview_id;
-                        if (empty($post['post_title']))
-                          $title = __('No Title', 'ust');
-                        else
-                          $title = htmlentities($post['post_title']);
-                        echo '<a title="'.mysql2date(__('Y-m-d g:i:sa - ', 'ust'), $post['post_date']).$title.'" href="'.$link.'" class="thickbox">'.ust_trim_title($title).'</a><br />';
-                        $preview_id++;
-                      }
-                    } else {
-                      _e('No Posts', 'ust');
-                    }
-                    ?>
-  								</td>
-  							<?php
-  							break;
-
-  						}
-  					}
-  					?>
-  					</tr>
-  					<?php
-  				}
-
-  			} else { ?>
-  				<tr style='background-color: <?php echo $bgcolor; ?>'>
-  					<td colspan="8"><?php _e('No blogs found.') ?></td>
-  				</tr>
-  			<?php
-  			} // end if ($blogs)
-  			?>
-
-  			</tbody>
-  			<tfoot>
-  				<tr>
-  				<th scope="col" class="check-column"><input type="checkbox" /></th>
-  				<?php foreach($posts_columns as $column_id => $column_display_name) {
-  					$col_url = $column_display_name;
-  					?>
-  					<th scope="col"><?php echo $col_url ?></th>
-  				<?php } ?>
-  				</tr>
-  			</tfoot>
-  		</table>
-
-  		<div class="tablenav">
-  			<?php if ( $blog_navigation ) echo "<div class='tablenav-pages'>$blog_navigation</div>"; ?>
-
-  			<div class="alignleft">
-  				<input type="submit" value="<?php _e('Ignore', 'ust') ?>" name="allblog_ignore" class="button-secondary allblog_ignore" />
-  				<input type="submit" value="<?php _e('Mark as Spam') ?>" name="allblog_spam" class="button-secondary allblog_spam" />
-  				<br class="clear" />
-  			</div>
-  		</div>
-
-  		</form>
-      <?php
-		  //print hidden post previews
-		  if (is_array($post_preview) && count($post_preview)) {
-		    echo '<div id="post_previews" style="display:none;">';
-        foreach ($post_preview as $id => $content) {
-          if ($ust_settings['strip'])
-            $content = strip_tags($content, '<a><strong><em><ul><ol><li>');
-          echo '<div id="post_preview_'.$id.'">'.wpautop(strip_shortcodes($content))."</div>\n";
-        }
-        echo '</div>';
-      }
-
-		break;
-
-
-		//---------------------------------------------------//
-		case "splogs":
-
-      ?><h3><?php _e('Recent Splogs', 'ust') ?></h3><?php
-      
-      _e('<p>These are all the blogs that have been marked as spam in order of when they were spammed. You can instantly preview any of these splogs or their last posts, and unspam them if there has been a mistake.</p>', 'ust');
-
-      $ust_settings = get_site_option('ust_settings');
-      $apage = isset( $_GET['apage'] ) ? intval( $_GET['apage'] ) : 1;
-  		$num = isset( $_GET['num'] ) ? intval( $_GET['num'] ) : $ust_settings['paged_blogs'];
-      $review = ($_GET['bid']) ? "AND b.blog_id = '".(int)$_GET['bid']."'" : '';
-
-  		$query = "SELECT *
-        				FROM {$wpdb->blogs} b
-                JOIN {$wpdb->registration_log} r ON b.blog_id = r.blog_id
-                JOIN {$wpdb->base_prefix}ust u ON b.blog_id = u.blog_id
-        				WHERE b.site_id = '{$wpdb->siteid}'
-        				AND b.spam = 1 $review
-                ORDER BY u.spammed DESC";
-
-  		$total = $wpdb->get_var( "SELECT COUNT(b.blog_id)
-                        				FROM {$wpdb->blogs} b
-                                JOIN {$wpdb->registration_log} r ON b.blog_id = r.blog_id
-                                JOIN {$wpdb->base_prefix}ust u ON b.blog_id = u.blog_id
-                        				WHERE b.site_id = '{$wpdb->siteid}'
-                        				AND b.spam = 1 $review" );
-
-  		$query .= " LIMIT " . intval( ( $apage - 1 ) * $num) . ", " . intval( $num );
-
-  		$blog_list = $wpdb->get_results( $query, ARRAY_A );
-
-  		$blog_navigation = paginate_links( array(
-  			'base' => add_query_arg( 'apage', '%#%' ).$url2,
-  			'format' => '',
-  			'total' => ceil($total / $num),
-  			'current' => $apage
-  		));
-  		$page_link = ($apage > 1) ? '&amp;apage='.$apage : '';
-  		?>
-
-  		<form id="form-blog-list" action="edit.php?action=allblogs" method="post">
-
-  		<div class="tablenav">
-  			<?php if ( $blog_navigation ) echo "<div class='tablenav-pages'>$blog_navigation</div>"; ?>
-
-  			<div class="alignleft">
-  				<select name="action">
-            <option selected="selected" value="-1"><?php _e('Bulk Actions') ?></option>
-          	<option value="delete"><?php _e('Delete') ?></option>
-          	<option value="notspam"><?php _e('Not Spam') ?></option>
-          </select>
-          <input type="submit" value="Apply" class="button-secondary action" id="doaction" name="doaction">
-          <?php wp_nonce_field( 'bulk-sites' ); ?>
-  				<br class="clear" />
-  			</div>
-  		</div>
-
-  		<br class="clear" />
-
-
-  		<?php
-  		// define the columns to display, the syntax is 'internal name' => 'display name'
-  		$blogname_columns = ( constant( "VHOST" ) == 'yes' ) ? __('Domain') : __('Path');
-  		$posts_columns = array(
-  			'id'           => __('ID'),
-  			'blogname'     => $blogname_columns,
-  			'ips'          => __('IPs', 'ust'),
-  			'users'        => __('Blog Users', 'ust'),
-  			'certainty'    => __('Splog Certainty', 'ust'),
-  			'method'       => __('Method'),
-        'spammed'      => __('Spammed', 'ust'),
-  			'registered'   => __('Registered'),
-        'posts'        => __('Last Posts', 'ust')
-  		);
-
-  		?>
-
-  		<table width="100%" cellpadding="3" cellspacing="3" class="widefat">
-  			<thead>
-  				<tr>
-  				<th scope="col" class="check-column"><input type="checkbox" /></th>
-  				<?php foreach($posts_columns as $column_id => $column_display_name) {
-  					$col_url = $column_display_name;
-  					?>
-  					<th scope="col"><?php echo $col_url ?></th>
-  				<?php } ?>
-  				</tr>
-  			</thead>
-  			<tbody id="the-list">
-  			<?php
-  			if ($blog_list) {
-  				$bgcolor = $class = '';
-  				foreach ($blog_list as $blog) {
-  					$class = ('alternate' == $class) ? '' : 'alternate';
-
-  					echo '<tr class="'.$class.' blog-row" id="bid-'.$blog['blog_id'].'">';
-
-  					$blogname = ( constant( "VHOST" ) == 'yes' ) ? str_replace('.'.$current_site->domain, '', $blog['domain']) : $blog['path'];
-  					foreach( $posts_columns as $column_name=>$column_display_name ) {
-  						switch($column_name) {
-  							case 'id': ?>
-  								<th scope="row" class="check-column">
-  									<input type='checkbox' id='blog_<?php echo $blog['blog_id'] ?>' name='allblogs[]' value='<?php echo $blog['blog_id'] ?>' />
-  								</th>
-  								<th scope="row">
-  									<?php echo $blog['blog_id'] ?>
-  								</th>
-  							<?php
-  							break;
-
-  							case 'blogname': ?>
-  								<td valign="top">
-  									<a title="<?php _e('Preview', 'ust'); ?>" href="http://<?php echo $blog['domain'].$blog['path']; ?>?KeepThis=true&TB_iframe=true&height=450&width=900" class="thickbox"><?php echo $blogname; ?></a>
-  									<br />
-  									<?php
-  									$controlActions	= array();
-  									$controlActions[]	= '<a class="delete ust_unspam" href="'.$ust_admin_url.'&amp;tab=splogs'.$page_link.'&amp;unspam_blog=1&amp;id=' . $blog['blog_id'] . '&amp;updated=1&amp;updatedmsg=' . urlencode( __('Blog marked as not spam!', 'ust')).'">' . __('Not Spam') . '</a>';
-  									$controlActions[]	= '<a class="delete" href="' . wp_nonce_url('edit.php?action=confirm&amp;action2=deleteblog&amp;id=' . $blog['blog_id'] . '&amp;msg=' . urlencode( sprintf( __( "You are about to delete the blog %s" ), $blogname ) ) . '&amp;updatedmsg=' . urlencode( __('Blog Deleted!', 'ust')), 'confirm').'">' . __("Delete") . '</a>';
-  									?>
-
-  									<?php if (count($controlActions)) : ?>
-  									<div class="row-actions">
-  										<?php echo implode(' | ', $controlActions); ?>
-  									</div>
-  									<?php endif; ?>
-  								</td>
-  							<?php
-  							break;
-
-                case 'ips':
-                  $result = $wpdb->get_row("SELECT user_login, spam FROM " . $wpdb->base_prefix . "users WHERE ID = '" . $blog['last_user_id'] . "'");
-                  $user_login = $result->user_login;
-                  $user_spam = $result->spam;
-                ?>
-  								<td valign="top">
-  									Registered: <a title="<?php _e('Search for IP', 'ust') ?>" href="sites.php?action=blogs&amp;s=<?php echo $blog['IP'] ?>&blog_ip=1" class="edit"><?php echo $blog['IP']; ?></a>
-                    <small class="row-actions"><a class="ust_spamip" title="<?php _e('Spam all blogs tied to this IP', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&id=<?php echo $blog['blog_id']; ?>&spam_ip=<?php echo $blog['IP']; ?>"><?php _e('Spam', 'ust') ?></a></small><br />
-                  <?php if ($blog['last_user_id']) : ?>
-                    <?php $spm_class = ($user_spam) ? ' style="color:red;"' : ''; ?>
-                    Last User: <a<?php echo $spm_class ?> title="<?php _e('Search for User Blogs', 'ust') ?>" href="users.php?s=<?php echo $user_login; ?>" class="edit"><?php echo $user_login; ?></a>
-                    <?php if ($user_spam == 0) : ?><small class="row-actions"><a class="ust_spamuser" title="<?php _e('Spam all blogs tied to this User', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&spam_user=<?php echo $blog['last_user_id']; ?>"><?php _e('Spam', 'ust') ?></a></small><?php endif; ?>
-                    <br />
-                  <?php endif; ?>
-                  <?php if ($blog['last_ip']) : ?>
-                    Last IP: <a title="<?php _e('Search for IP', 'ust') ?>" href="sites.php?action=blogs&amp;s=<?php echo $blog['last_ip']; ?>&blog_ip=1" class="edit"><?php echo $blog['last_ip']; ?></a>
-                    <small class="row-actions"><a class="ust_spamip" title="<?php _e('Spam all blogs tied to this IP', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&id=<?php echo $blog['blog_id']; ?>&spam_ip=<?php echo $blog['last_ip']; ?>"><?php _e('Spam', 'ust') ?></a></small>
-  								<?php endif; ?>
-                  </td>
-  							<?php
-  							break;
-
-  							case 'users': ?>
-  								<td valign="top">
-  									<?php
-                  	$blog_prefix = $wpdb->get_blog_prefix( $blog['blog_id'] );
-                  	$blogusers = $wpdb->get_results( "SELECT user_id, user_id AS ID, user_login, display_name, user_email, spam, meta_value FROM $wpdb->users, $wpdb->usermeta WHERE {$wpdb->users}.ID = {$wpdb->usermeta}.user_id AND meta_key = '{$blog_prefix}capabilities' ORDER BY {$wpdb->usermeta}.user_id" );
-  									if ( is_array( $blogusers ) ) {
-  										$blogusers_warning = '';
-  										if ( count( $blogusers ) > 5 ) {
-  											$blogusers = array_slice( $blogusers, 0, 5 );
-  											$blogusers_warning = __( 'Only showing first 5 users.' ) . ' <a href="http://' . $blog[ 'domain' ] . $blog[ 'path' ] . 'wp-admin/users.php">' . __( 'More' ) . '</a>';
-  										}
-  										foreach ( $blogusers as $key => $val ) {
-                        $spm_class = ($val->spam) ? ' style="color:red;"' : '';
-  											echo '<a'.$spm_class.' title="Edit User: ' . $val->display_name . ' ('.$val->user_email.')" href="user-edit.php?user_id=' . $val->user_id . '">' . $val->user_login . '</a> ';
-                        echo '<small class="row-actions"><a title="' . __('All Blogs of User', 'ust') . '" href="users.php?s=' . $val->user_login . '">' . __('Blogs', 'ust') . '</a>';
-                        if ($val->spam == 0)
-                          echo ' | <a class="ust_spamuser" title="' . __('Spam all blogs tied to this User', 'ust') . '" href="'.$ust_admin_url.$page_link.'&updated=1&spam_user=' . $val->user_id . '">' . __('Spam', 'ust') . '</a></small>';
-                        echo '<br />';
-                      }
-  										if( $blogusers_warning != '' ) {
-  											echo '<strong>' . $blogusers_warning . '</strong><br />';
-  										}
-  									}
-  									?>
-  								</td>
-  							<?php
-  							break;
-
-                case 'certainty': ?>
-  								<td valign="top">
-  									<?php echo $blog['certainty']; ?>%
-  								</td>
-  							<?php
-  							break;
-
-                case 'method': ?>
-  								<td valign="top">
-  									<?php
-                      if (get_blog_option($blog['blog_id'], 'ust_auto_spammed'))
-                        _e('Auto: Signup', 'ust');
-                      else if (get_blog_option($blog['blog_id'], 'ust_post_auto_spammed'))
-                        _e('Auto: Post', 'ust');
-                      else
-                        _e('Manual', 'ust');
-                    ?>
-  								</td>
-  							<?php
-  							break;
-
-                case 'spammed': ?>
-  								<td valign="top">
-  									<?php echo ( $blog['spammed'] == '0000-00-00 00:00:00' ) ? __("Never") : mysql2date(__('Y-m-d \<\b\r \/\> g:i:s a'), $blog['spammed']); ?>
-  								</td>
-  							<?php
-  							break;
-
-  							case 'registered': ?>
-  								<td valign="top">
-  									<?php echo mysql2date(__('Y-m-d \<\b\r \/\> g:i:s a'), $blog['registered']); ?>
-  								</td>
-  							<?php
-  							break;
-
-                case 'posts':
-  							  $query = "SELECT ID, post_title, post_excerpt, post_content, post_author, post_date FROM `{$wpdb->base_prefix}{$blog['blog_id']}_posts` WHERE post_status = 'publish' AND post_type = 'post' AND ID != '1' ORDER BY post_date DESC LIMIT {$ust_settings['paged_posts']}";
-                  $posts = $wpdb->get_results( $query, ARRAY_A );
-                ?>
-  								<td valign="top">
-  									<?php
-  									if (is_array($posts) && count($posts)) {
-                      foreach ($posts as $post) {
-                        $post_preview[$preview_id] = $post['post_content'];
-                        $link = '#TB_inline?height=440&width=600&inlineId=post_preview_'.$preview_id;
-                        if (empty($post['post_title']))
-                          $title = __('No Title', 'ust');
-                        else
-                          $title = htmlentities($post['post_title']);
-                        echo '<a title="'.mysql2date(__('Y-m-d g:i:sa - ', 'ust'), $post['post_date']).$title.'" href="'.$link.'" class="thickbox">'.ust_trim_title($title).'</a><br />';
-                        $preview_id++;
-                      }
-                    } else {
-                      _e('No Posts', 'ust');
-                    }
-                    ?>
-  								</td>
-  							<?php
-  							break;
-
-  						}
-  					}
-  					?>
-  					</tr>
-  					<?php
-  				}
-  			} else { ?>
-  				<tr style='background-color: <?php echo $bgcolor; ?>'>
-  					<td colspan="8"><?php _e('No blogs found.') ?></td>
-  				</tr>
-  			<?php
-  			} // end if ($blogs)
-  			?>
-
-  			</tbody>
-  			<tfoot>
-  				<tr>
-  				<th scope="col" class="check-column"><input type="checkbox" /></th>
-  				<?php foreach($posts_columns as $column_id => $column_display_name) {
-  					$col_url = $column_display_name;
-  					?>
-  					<th scope="col"><?php echo $col_url ?></th>
-  				<?php } ?>
-  				</tr>
-  			</tfoot>
-  		</table>
-
-  		<div class="tablenav">
-  			<?php if ( $blog_navigation ) echo "<div class='tablenav-pages'>$blog_navigation</div>"; ?>
-
-  			<div class="alignleft">
-          <select name="action2">
-            <option selected="selected" value="-1"><?php _e('Bulk Actions') ?></option>
-          	<option value="delete"><?php _e('Delete') ?></option>
-          	<option value="notspam"><?php _e('Not Spam') ?></option>
-          </select>
-          <input type="submit" value="Apply" class="button-secondary action" id="doaction2" name="doaction2">
-  				<br class="clear" />
-  			</div>
-  		</div>
-
-  		</form>
-      <?php
-      //print hidden post previews
-		  if (is_array($post_preview) && count($post_preview)) {
-		    echo '<div id="post_previews" style="display:none;">';
-        foreach ($post_preview as $id => $content) {
-          if ($ust_settings['strip'])
-            $content = strip_tags($content, '<a><strong><em><ul><ol><li>');
-          echo '<div id="post_preview_'.$id.'">'.wpautop(strip_shortcodes($content))."</div>\n";
-        }
-        echo '</div>';
-      }
-
-		break;
-
-
-		//---------------------------------------------------//
-		case "ignored":
-
-      ?><h3><?php _e('Ignored Blogs', 'ust') ?></h3><?php
-      
-      _e('<p>These are suspicious blogs that you have decided are valid. If you have made a mistake you can send them back to the Suspected Blogs queue or spam them.</p>', 'ust');
-
-      $ust_settings = get_site_option('ust_settings');
-      $apage = isset( $_GET['apage'] ) ? intval( $_GET['apage'] ) : 1;
-  		$num = isset( $_GET['num'] ) ? intval( $_GET['num'] ) : $ust_settings['paged_blogs'];
-
-  		$query = "SELECT *
-        				FROM {$wpdb->blogs} b, {$wpdb->registration_log} r, {$wpdb->base_prefix}ust u
-        				WHERE b.site_id = '{$wpdb->siteid}'
-        				AND b.blog_id = r.blog_id
-        				AND b.blog_id = u.blog_id
-        				AND b.spam = 0 AND u.`ignore` = 1
-                ORDER BY u.spammed DESC";
-
-  		$total = $wpdb->get_var( "SELECT COUNT(b.blog_id)
-                        				FROM {$wpdb->blogs} b, {$wpdb->registration_log} r, {$wpdb->base_prefix}ust u
-                        				WHERE b.site_id = '{$wpdb->siteid}'
-                        				AND b.blog_id = r.blog_id
-                        				AND b.blog_id = u.blog_id
-                        				AND b.spam = 0 AND u.`ignore` = 1" );
-
-  		$query .= " LIMIT " . intval( ( $apage - 1 ) * $num) . ", " . intval( $num );
-
-  		$blog_list = $wpdb->get_results( $query, ARRAY_A );
-
-  		$blog_navigation = paginate_links( array(
-  			'base' => add_query_arg( 'apage', '%#%' ).$url2,
-  			'format' => '',
-  			'total' => ceil($total / $num),
-  			'current' => $apage
-  		));
-  		$page_link = ($apage > 1) ? '&amp;apage='.$apage : '';
-  		?>
-
-  		<form id="form-blog-list" action="<?php echo $ust_admin_url; ?>&amp;tab=ignored<?php echo $page_link; ?>&amp;action=allblogs&amp;updated=1" method="post">
-
-  		<div class="tablenav">
-  			<?php if ( $blog_navigation ) echo "<div class='tablenav-pages'>$blog_navigation</div>"; ?>
-
-  			<div class="alignleft">
-  				<input type="submit" value="<?php _e('Un-ignore', 'ust') ?>" name="allblog_unignore" class="button-secondary allblog_unignore" />
-  				<input type="submit" value="<?php _e('Mark as Spam') ?>" name="allblog_spam" class="button-secondary allblog_spam" />
-  				<br class="clear" />
-  			</div>
-  		</div>
-
-  		<br class="clear" />
-
-      <?php
-  		// define the columns to display, the syntax is 'internal name' => 'display name'
-  		$blogname_columns = ( constant( "VHOST" ) == 'yes' ) ? __('Domain') : __('Path');
-  		$posts_columns = array(
-  			'id'           => __('ID'),
-  			'blogname'     => $blogname_columns,
-  			'ips'          => __('IPs', 'ust'),
-  			'users'        => __('Blog Users', 'ust'),
-  			'certainty'    => __('Splog Certainty', 'ust'),
-  			'lastupdated'  => __('Last Updated'),
-  			'registered'   => __('Registered'),
-        'posts'        => __('Recent Posts', 'ust')
-  		);
-
-  		?>
-
-  		<table width="100%" cellpadding="3" cellspacing="3" class="widefat">
-  			<thead>
-  				<tr>
-  				<th scope="col" class="check-column"><input type="checkbox" /></th>
-  				<?php foreach($posts_columns as $column_id => $column_display_name) {
-  					$col_url = $column_display_name;
-  					?>
-  					<th scope="col"><?php echo $col_url ?></th>
-  				<?php } ?>
-  				</tr>
-  			</thead>
-  			<tbody id="the-list">
-  			<?php
-  			if ($blog_list) {
-  				$bgcolor = $class = '';
-  				$preview_id = 0;
-  				foreach ($blog_list as $blog) {
-  					$class = ('alternate' == $class) ? '' : 'alternate';
-
-  					echo '<tr class="'.$class.' blog-row" id="bid-'.$blog['blog_id'].'">';
-
-  					$blogname = ( constant( "VHOST" ) == 'yes' ) ? str_replace('.'.$current_site->domain, '', $blog['domain']) : $blog['path'];
-  					foreach( $posts_columns as $column_name=>$column_display_name ) {
-  						switch($column_name) {
-  							case 'id': ?>
-  								<th scope="row" class="check-column">
-  									<input type='checkbox' id='blog_<?php echo $blog['blog_id'] ?>' name='allblogs[]' value='<?php echo $blog['blog_id'] ?>' />
-  								</th>
-  								<th scope="row">
-  									<?php echo $blog['blog_id']; ?>
-  								</th>
-  							<?php
-  							break;
-
-  							case 'blogname': ?>
-  								<td valign="top">
-  									<a title="<?php _e('Preview', 'ust'); ?>" href="http://<?php echo $blog['domain'].$blog['path']; ?>?KeepThis=true&TB_iframe=true&height=450&width=900" class="thickbox"><?php echo $blogname; ?></a>
-  									<br />
-  									<div class="row-actions">
-  										<?php echo '<a class="delete ust_unignore" href="'.$ust_admin_url.'&amp;tab=ignored'.$page_link.'&amp;unignore_blog=1&amp;id=' . $blog['blog_id'] . '&amp;updated=1&amp;updatedmsg=' . urlencode( __('Blog Un-ignored!', 'ust')).'">' . __('Un-ignore', 'ust') . '</a>'; ?> |
-  										<?php echo '<a class="delete ust_spam" href="'.$ust_admin_url.'&amp;tab=ignored'.$page_link.'&amp;spam_blog=1&amp;id=' . $blog['blog_id'] . '&amp;updated=1&amp;updatedmsg=' . urlencode( __('Blog marked as spam!', 'ust')).'">' . __('Spam') . '</a>'; ?>
-  									</div>
-  								</td>
-  							<?php
-  							break;
-
-                case 'ips':
-                  $result = $wpdb->get_row("SELECT user_login, spam FROM " . $wpdb->base_prefix . "users WHERE ID = '" . $blog['last_user_id'] . "'");
-                  $user_login = $result->user_login;
-                  $user_spam = $result->spam;
-                ?>
-  								<td valign="top">
-  									Registered: <a title="<?php _e('Search for IP', 'ust') ?>" href="sites.php?action=blogs&amp;s=<?php echo $blog['IP'] ?>&blog_ip=1" class="edit"><?php echo $blog['IP']; ?></a>
-                    <small class="row-actions"><a class="ust_spamip" title="<?php _e('Spam all blogs tied to this IP', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&id=<?php echo $blog['blog_id']; ?>&spam_ip=<?php echo $blog['IP']; ?>"><?php _e('Spam', 'ust') ?></a></small><br />
-                  <?php if ($blog['last_user_id']) : ?>
-                    <?php $spm_class = ($user_spam) ? ' style="color:red;"' : ''; ?>
-                    Last User: <a<?php echo $spm_class ?> title="<?php _e('Search for User Blogs', 'ust') ?>" href="users.php?s=<?php echo $user_login; ?>" class="edit"><?php echo $user_login; ?></a>
-                    <?php if ($user_spam == 0) : ?><small class="row-actions"><a class="ust_spamuser" title="<?php _e('Spam all blogs tied to this User', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&spam_user=<?php echo $blog['last_user_id']; ?>"><?php _e('Spam', 'ust') ?></a></small><?php endif; ?>
-                    <br />
-                  <?php endif; ?>
-                  <?php if ($blog['last_ip']) : ?>
-                    Last IP: <a title="<?php _e('Search for IP', 'ust') ?>" href="sites.php?action=blogs&amp;s=<?php echo $blog['last_ip']; ?>&blog_ip=1" class="edit"><?php echo $blog['last_ip']; ?></a>
-                    <small class="row-actions"><a class="ust_spamip" title="<?php _e('Spam all blogs tied to this IP', 'ust') ?>" href="<?php echo $ust_admin_url.$page_link; ?>&updated=1&id=<?php echo $blog['blog_id']; ?>&spam_ip=<?php echo $blog['last_ip']; ?>"><?php _e('Spam', 'ust') ?></a></small>
-  								<?php endif; ?>
-                  </td>
-  							<?php
-  							break;
-
-  							case 'users': ?>
-  								<td valign="top">
-  									<?php
-                  	$blog_prefix = $wpdb->get_blog_prefix( $blog['blog_id'] );
-                  	$blogusers = $wpdb->get_results( "SELECT user_id, user_id AS ID, user_login, display_name, user_email, spam, meta_value FROM $wpdb->users, $wpdb->usermeta WHERE {$wpdb->users}.ID = {$wpdb->usermeta}.user_id AND meta_key = '{$blog_prefix}capabilities' ORDER BY {$wpdb->usermeta}.user_id" );
-  									if ( is_array( $blogusers ) ) {
-  										$blogusers_warning = '';
-  										if ( count( $blogusers ) > 5 ) {
-  											$blogusers = array_slice( $blogusers, 0, 5 );
-  											$blogusers_warning = __( 'Only showing first 5 users.' ) . ' <a href="http://' . $blog[ 'domain' ] . $blog[ 'path' ] . 'wp-admin/users.php">' . __( 'More' ) . '</a>';
-  										}
-  										foreach ( $blogusers as $key => $val ) {
-                        $spm_class = ($val->spam) ? ' style="color:red;"' : '';
-  											echo '<a'.$spm_class.' title="Edit User: ' . $val->display_name . ' ('.$val->user_email.')" href="user-edit.php?user_id=' . $val->user_id . '">' . $val->user_login . '</a> ';
-                        echo '<small class="row-actions"><a title="' . __('All Blogs of User', 'ust') . '" href="users.php?s=' . $val->user_login . '">' . __('Blogs', 'ust') . '</a>';
-                        if ($val->spam == 0)
-                          echo ' | <a class="ust_spamuser" title="' . __('Spam all blogs tied to this User', 'ust') . '" href="'.$ust_admin_url.$page_link.'&updated=1&spam_user=' . $val->user_id . '">' . __('Spam', 'ust') . '</a></small>';
-                        echo '<br />';
-                      }
-  										if( $blogusers_warning != '' ) {
-  											echo '<strong>' . $blogusers_warning . '</strong><br />';
-  										}
-  									}
-  									?>
-  								</td>
-  							<?php
-  							break;
-
-                case 'certainty': ?>
-  								<td valign="top">
-  									<?php echo $blog['certainty']; ?>%
-  								</td>
-  							<?php
-  							break;
-
-  							case 'lastupdated': ?>
-  								<td valign="top">
-  									<?php echo ( $blog['last_updated'] == '0000-00-00 00:00:00' ) ? __("Never") : mysql2date(__('Y-m-d \<\b\r \/\> g:i:s a'), $blog['last_updated']); ?>
-  								</td>
-  							<?php
-  							break;
-
-  							case 'registered': ?>
-  								<td valign="top">
-  									<?php echo mysql2date(__('Y-m-d \<\b\r \/\> g:i:s a'), $blog['registered']); ?>
-  								</td>
-  							<?php
-  							break;
-
-  							case 'posts':
-  							  $query = "SELECT ID, post_title, post_excerpt, post_content, post_author, post_date FROM `{$wpdb->base_prefix}{$blog['blog_id']}_posts` WHERE post_status = 'publish' AND post_type = 'post' AND ID != '1' ORDER BY post_date DESC LIMIT {$ust_settings['paged_posts']}";
-                  $posts = $wpdb->get_results( $query, ARRAY_A );
-                ?>
-  								<td valign="top">
-  									<?php
-  									if (is_array($posts) && count($posts)) {
-                      foreach ($posts as $post) {
-                        $post_preview[$preview_id] = $post['post_content'];
-                        $link = '#TB_inline?height=440&width=600&inlineId=post_preview_'.$preview_id;
-                        if (empty($post['post_title']))
-                          $title = __('No Title', 'ust');
-                        else
-                          $title = htmlentities($post['post_title']);
-                        echo '<a title="'.mysql2date(__('Y-m-d g:i:sa - ', 'ust'), $post['post_date']).$title.'" href="'.$link.'" class="thickbox">'.ust_trim_title($title).'</a><br />';
-                        $preview_id++;
-                      }
-                    } else {
-                      _e('No Posts', 'ust');
-                    }
-                    ?>
-  								</td>
-  							<?php
-  							break;
-
-  						}
-  					}
-  					?>
-  					</tr>
-  					<?php
-  				}
-
-  			} else { ?>
-  				<tr style='background-color: <?php echo $bgcolor; ?>'>
-  					<td colspan="8"><?php _e('No blogs found.') ?></td>
-  				</tr>
-  			<?php
-  			} // end if ($blogs)
-  			?>
-
-  			</tbody>
-  			<tfoot>
-  				<tr>
-  				<th scope="col" class="check-column"><input type="checkbox" /></th>
-  				<?php foreach($posts_columns as $column_id => $column_display_name) {
-  					$col_url = $column_display_name;
-  					?>
-  					<th scope="col"><?php echo $col_url ?></th>
-  				<?php } ?>
-  				</tr>
-  			</tfoot>
-  		</table>
-
-  		<div class="tablenav">
-  			<?php if ( $blog_navigation ) echo "<div class='tablenav-pages'>$blog_navigation</div>"; ?>
-
-  			<div class="alignleft">
-  				<input type="submit" value="<?php _e('Un-ignore', 'ust') ?>" name="allblog_unignore" class="button-secondary allblog_unignore" />
-  				<input type="submit" value="<?php _e('Mark as Spam') ?>" name="allblog_spam" class="button-secondary allblog_spam" />
-  				<br class="clear" />
-  			</div>
-  		</div>
-
-  		</form>
-      <?php
-      //print hidden post previews
-		  if (is_array($post_preview) && count($post_preview)) {
-		    echo '<div id="post_previews" style="display:none;">';
-        foreach ($post_preview as $id => $content) {
-          if ($ust_settings['strip'])
-            $content = strip_tags($content, '<a><strong><em><ul><ol><li>');
-          echo '<div id="post_preview_'.$id.'">'.wpautop(strip_shortcodes($content))."</div>\n";
-        }
-        echo '</div>';
-      }
-
-		break;
-
-
-		//---------------------------------------------------//
-		case "settings":
-
-		  $domain = $current_site->domain;
-		  $register_url = "http://premium.wpmudev.org/wp-admin/profile.php?page=ustapi&amp;domain=$domain";
-
-		  function ust_trim_array($input) {
-        if (!is_array($input))
-          return trim($input);
-        return array_map('ust_trim_array', $input);
-      }
-
-		  //process form
-		  if (isset($_POST['ust_settings'])) {
-
-		    //check the api key and connection
-		    $request["API_KEY"] = $_POST['ust']['api_key'];
-		    $api_response = ust_http_post('api_check', $request);
-		    if ($api_response && $api_response != 'Valid') {
-		      $_POST['ust']['api_key'] = '';
-		      echo '<div id="message" class="error"><p>'.__(sprintf('There was a problem with the API key you entered: "%s" <a href="%s" target="_blank">Fix it here&raquo;</a>', $api_response, $register_url), 'ust').'</p></div>';
-		    } else if (!$api_response) {
-		      $_POST['ust']['api_key'] = '';
-		      echo '<div id="message" class="error"><p>'.__('There was a problem connecting to the API server. Please try again later.', 'ust').'</p></div>';
-        }
-        if (trim($_POST['ust']['keywords']))
-		      $_POST['ust']['keywords'] = explode("\n", trim($_POST['ust']['keywords']));
-		    else
-		      $_POST['ust']['keywords'] = '';
-   		  update_site_option("ust_settings", $_POST['ust']);
-
-   		  $ust_signup['active'] = ($_POST['ust_signup']) ? 1 : 0;
-        $ust_signup['expire'] = time() + 86400; //extend 24 hours
-        $ust_signup['slug'] = 'signup-'.substr(md5(time()), rand(0,30), 3); //create new random signup url
-        update_site_option('ust_signup', $ust_signup);
-
-        update_site_option("ust_recaptcha", ust_trim_array($_POST['recaptcha']));
-
-        //process user questions
-        $qa['questions'] = explode("\n", trim($_POST['ust_qa']['questions']));
-        $qa['answers'] = explode("\n", trim($_POST['ust_qa']['answers']));
-        $i = 0;
-        foreach ($qa['questions'] as $question) {
-          if (trim($qa['answers'][$i]))
-            $ust_qa[] = array(trim($question), trim($qa['answers'][$i]));
-          $i++;
-        }
-        update_site_option("ust_qa", $ust_qa);
-
-  			do_action('ust_settings_process');
-
-  			echo '<div id="message" class="updated fade"><p>'.__('Settings Saved!', 'ust').'</p></div>';
-  		}
-
-  		$ust_settings = get_site_option("ust_settings");
-  		$ust_signup = get_site_option('ust_signup');
-  		$ust_recaptcha = get_site_option("ust_recaptcha");
-  		$ust_qa = get_site_option("ust_qa");
-  		if (!$ust_qa)
-  		  $ust_qa = array(array('What is the answer to "Ten times Two" in word form?','Twenty'), array('What is the last name of the current US president?','Obama'));
-
-  		if (is_array($ust_qa) && count($ust_qa)) {
-    		foreach ($ust_qa as $pair) {
-          $questions[] = $pair[0];
-          $answers[] = $pair[1];
-        }
-  		}
-
-  		//create salt if not set
-  		if (!get_site_option("ust_salt"))
-  		  update_site_option("ust_salt", substr(md5(time()), rand(0,15), 10));
-
-  		if (!$ust_settings['api_key'])
-  		  $style = ' style="background-color:#FF7C7C;"';
-  		else
-  		  $style = ' style="background-color:#ADFFAA;"';
-
-
-			?>
-          <form method="post" action="<?php echo $ust_admin_url; ?>&tab=settings">
-          <input type="hidden" name="ust_settings" value="1" />
-          <h3><?php _e('API Settings', 'ust') ?></h3>
-          <p><?php _e("You must enter an API key and register the WordPress Multisite Domain (<strong>$domain</strong>) of this server to enable live splog checking. <a href='$register_url' target='_blank'>Get your API key and register your server here.</a> You must be a current WPMU DEV Premium subscriber to use our API.", 'ust') ?></p>
-  				<p><?php _e("<strong>How It Works</strong> - When a user completes the signup for a blog (email activated) or publishes a blog post it will send all kinds of blog and signup info to our server here where we will rate it based on our secret ever-adjusting logic. Our API will then return a splog Certainty number (0%-100%) to your server. If that number is greater than the sensitivity preference you set in the plugin settings (80% default) then the blog gets auto-spammed. Since the blog was actually created, it will still show up in the site admin (as spammed) so you can unspam later if there was a mistake (and our service will learn from that). The API (especially the post checking part) has proven to be more than 98% effective at removing splogs. Enable it today to save countless hours managing your network!", 'ust') ?></p>
-					<table class="form-table">
-              <tr valign="top">
-              <th scope="row"><?php _e('API Key', 'ust') ?>*</th>
-              <td><input type="text" name="ust[api_key]"<?php echo $style; ?> value="<?php echo stripslashes($ust_settings['api_key']); ?>" /><input type="submit" name="check_key" value="<?php _e('Check Key &raquo;', 'ust') ?>" /></td>
-              </tr>
-
-              <tr valign="top">
-              <th scope="row"><?php _e('Blog Signup Splog Certainty', 'ust') ?></th>
-              <td><select name="ust[certainty]">
-            	<?php
-            		for ( $counter = 10; $counter <= 100; $counter += 5 ) {
-                  echo '<option value="' . $counter . '"' . ($ust_settings['certainty']==$counter ? ' selected="selected"' : '') . '>' . $counter . '%</option>' . "\n";
-            		}
-            		echo '<option value="999"' . ($ust_settings['certainty']==999 ? ' selected="selected"' : '') . '>' . __("Don't Spam", 'ust') . '</option>' . "\n";
-              ?>
-              </select>
-              <br /><em><?php _e('Blog signups that return a certainty number greater than or equal to this will automatically be marked as spam.', 'ust'); ?></em></td>
-              </tr>
-
-              <tr valign="top">
-              <th scope="row"><?php _e('Posting Splog Certainty', 'ust') ?></th>
-              <td><select name="ust[post_certainty]">
-            	<?php
-            		for ( $counter = 50; $counter <= 100; $counter += 2 ) {
-                  echo '<option value="' . $counter . '"' . ($ust_settings['post_certainty']==$counter ? ' selected="selected"' : '') . '>' . $counter . '%</option>' . "\n";
-            		}
-            		echo '<option value="999"' . ($ust_settings['post_certainty']==999 ? ' selected="selected"' : '') . '>' . __("Don't Spam", 'ust') . '</option>' . "\n";
-              ?>
-              </select>
-              <br /><em><?php _e('If a post from a new blog is checked by the API and returns a certainty number greater than or equal to this, it will automatically be marked as spam.', 'ust'); ?></em></td>
-              </tr>
-						</table>
-						
-						<h3><?php _e('General Settings', 'ust') ?></h3>
-						<span class="description"><?php _e('These protections will work even without an API key.', 'ust') ?></span>
-						<table class="form-table">
-              <tr valign="top">
-              <th scope="row"><?php _e('Limit Blog Signups Per Day', 'ust') ?></th>
-              <td><select name="ust[num_signups]">
-            	<?php
-            		for ( $counter = 1; $counter <= 250; $counter += 1 ) {
-                  echo '<option value="' . $counter . '"' . ($ust_settings['num_signups']==$counter ? ' selected="selected"' : '') . '>' . $counter . '</option>' . "\n";
-            		}
-                echo '<option value=""' . ($ust_settings['num_signups']=='' ? ' selected="selected"' : '') . '>' . __('Unlimited', 'ust') . '</option>' . "\n";
-              ?>
-              </select>
-              <br /><em><?php _e('Splog bots and users often register a large number of blogs in a short amount of time. This setting will limit the number of blog signups per 24 hours per IP, which can drastically reduce the splogs you have to deal with if they get past other filters (human sploggers). Remember that an IP is not necessarily tied to a single user. For example employees behind a company firewall may share a single IP.', 'ust'); ?></em></td>
-              </tr>
-
-              <tr valign="top">
-              <th scope="row"><?php _e('Rename wp-signup.php', 'ust') ?>
-              <br /><em><small><?php _e('(Not Buddypress compatible)', 'ust') ?></small></em>
-              </th>
-              <td>
-              <label for="ust_signup"><input type="checkbox" name="ust_signup" id="ust_signup"<?php echo ($ust_signup['active']) ? ' checked="checked"' : ''; ?> /> <?php _e('Move wp-signup.php', 'ust') ?></label>
-              <br /><?php _e('Current Signup URL:', 'ust') ?> <strong><a target="_blank" href="<?php ust_wpsignup_url(); ?>"><?php ust_wpsignup_url(); ?></a></strong>
-              <br /><em><?php _e("Checking this option will disable the wp-signup.php form and change the signup url automatically every 24 hours. It will look something like <strong>http://$domain/signup-XXX/</strong>. To use this you may need to make some slight edits to your main theme's template files. Replace any hardcoded links to wp-signup.php with this function: <strong>&lt;?php ust_wpsignup_url(); ?&gt;</strong> Within post or page content you can insert the <strong>[ust_wpsignup_url]</strong> shortcode, usually in the href of a link. See the install.txt file for more detailed documentation on this function.", 'ust'); ?></em></td>
-              </td>
-              </tr>
-
-              <tr valign="top">
-              <th scope="row"><?php _e('Spam/Unspam Blog Users', 'ust') ?></th>
-              <td>
-              <select name="ust[spam_blog_users]">
-            	<?php
-                echo '<option value="1"' . ($ust_settings['spam_blog_users'] == 1 ? ' selected="selected"' : '') . '>' . __('Yes', 'ust') . '</option>' . "\n";
-                echo '<option value="0"' . ($ust_settings['spam_blog_users'] != 1 ? ' selected="selected"' : '') . '>' . __('No', 'ust') . '</option>' . "\n";
-              ?>
-              </select><br /><em><?php _e("Enable this to spam/unspam all of a blog's users when the blog is spammed/unspammed. Does not spam Super Admins.", 'ust'); ?></em></td>
-              </td>
-              </tr>
-
-              <tr valign="top">
-              <th scope="row"><?php _e('Queue Display Preferences', 'ust') ?></th>
-              <td>
-              <?php _e('Strip Images From Post Previews:', 'ust') ?>
-              <select name="ust[strip]">
-            	<?php
-                echo '<option value="1"' . ($ust_settings['strip']==1 ? ' selected="selected"' : '') . '>' . __('Yes', 'ust') . '</option>' . "\n";
-                echo '<option value="0"' . ($ust_settings['strip']==0 ? ' selected="selected"' : '') . '>' . __('No', 'ust') . '</option>' . "\n";
-              ?>
-              </select><br />
-              <?php _e('Blogs Per Page:', 'ust') ?>
-              <select name="ust[paged_blogs]">
-            	<?php
-            		for ( $counter = 5; $counter <= 100; $counter += 5 ) {
-                  echo '<option value="' . $counter . '"' . ($ust_settings['paged_blogs']==$counter ? ' selected="selected"' : '') . '>' . $counter . '</option>' . "\n";
-            		}
-              ?>
-              </select><br />
-              <?php _e('Post Previews Per Blog:', 'ust') ?>
-              <select name="ust[paged_posts]">
-            	<?php
-            		for ( $counter = 1; $counter <= 20; $counter += 1 ) {
-                  echo '<option value="' . $counter . '"' . ($ust_settings['paged_posts']==$counter ? ' selected="selected"' : '') . '>' . $counter . '</option>' . "\n";
-            		}
-              ?>
-              </select>
-              </td>
-              </tr>
-
-              <tr valign="top">
-              <th scope="row"><?php _e('Spam Keyword Search', 'ust') ?></th>
-              <td>
-              <em><?php _e('Enter one word or phrase per line. Keywords are not case sensitive and may match any part of a word. Example: "Ugg" would match "s<strong>ugg</strong>estion".', 'ust'); ?></em><br />
-              <?php if (!function_exists('post_indexer_post_insert_update')) { ?>
-              <p class="error"><?php _e('You must install the <a target="_blank" href="http://premium.wpmudev.org/project/post-indexer">Post Indexer</a> plugin to enable keyword flagging.', 'ust'); ?></p>
-              <textarea name="ust[keywords]" style="width:200px" rows="4" disabled="disabled"><?php echo stripslashes(implode("\n", (array)$ust_settings['keywords'])); ?></textarea>
-              <?php } else { ?>
-              <textarea name="ust[keywords]" style="width:200px" rows="4"><?php echo stripslashes(implode("\n", (array)$ust_settings['keywords'])); ?></textarea>
-              <?php } ?>
-              <br /><strong><em><?php _e('This feature is designed to work in conjunction with our Post Indexer plugin to help you find old and inactive splogs that the API service would no longer catch. Blogs that have these keywords in posts will be temporarily flagged and added to the potential splogs queue. Keywords should only be added here temporarily while searching for splogs. CAUTION: Do not enter more than a few (2-4) keywords at a time or it may slow down or timeout the Suspected Blogs page depending on the number of site-wide posts and server speed.', 'ust'); ?></em></strong></td>
-              </tr>
-
-              <tr valign="top">
-              <th scope="row"><?php _e('Additional Signup Protection', 'ust') ?></th>
-              <td>
-              <select name="ust[signup_protect]" id="ust_signup_protect">
-          			<option value="none" <?php if($ust_settings['signup_protect'] == 'none'){echo 'selected="selected"';} ?>><?php _e('None', 'ust') ?></option>
-          			<option value="questions" <?php if($ust_settings['signup_protect'] == 'questions'){echo 'selected="selected"';} ?>><?php _e('Admin Defined Questions', 'ust') ?></option>
-          			<option value="asirra" <?php if($ust_settings['signup_protect'] == 'asirra'){echo 'selected="selected"';} ?>><?php _e('ASIRRA - Pick the Cats', 'ust') ?></option>
-          			<option value="recaptcha" <?php if($ust_settings['signup_protect'] == 'recaptcha'){echo 'selected="selected"';} ?>><?php _e('reCAPTCHA - Advanced Captcha', 'ust') ?></option>
-        			</select>
-              <br /><em><?php _e('These options are designed to prevent automated spam bot signups, so will have limited effect in stopping human sploggers. Be cautious using these options as it is important to find a balance between stopping bots and not annoying your users.', 'ust'); ?></em></td>
-              </td>
-              </tr>
-
-              <?php do_action('ust_settings'); ?>
-          </table>
-
-          <h3><?php _e('Defined Questions Options', 'ust') ?></h3>
-        	<p><?php _e('Displays a random question from the list, and the user must enter the correct answer. It is best to create a large pool of questions that have one-word answers. Answers are not case-sensitive.', 'ust') ?></p>
-          <table class="form-table">
-          <tr valign="top">
-      		<th scope="row"><?php _e('Questions and Answers', 'ust') ?></th>
-      		<td>
-      			<table>
-        			<tr>
-          		  <td style="width:75%">
-                  <?php _e('Questions (one per row)', 'ust') ?>
-                  <textarea name="ust_qa[questions]" style="width:100%" rows="10"><?php echo stripslashes(implode("\n", $questions)); ?></textarea>
-                </td>
-          		  <td style="width:25%">
-                  <?php _e('Answers (one per row)', 'ust') ?>
-                  <textarea name="ust_qa[answers]" style="width:100%" rows="10"><?php echo stripslashes(implode("\n", $answers)); ?></textarea>
-                </td>
-        		  </tr>
-      		  </table>
-      	  </td>
-          </tr>
-          </table>
-
-          <h3><?php _e('Assira', 'ust') ?></h3>
-        	<p><?php _e('Asirra works by asking users to identify photographs of cats and dogs. This task is difficult for computers, but user studies have shown that people can accomplish it quickly and accurately. Many even think it\'s fun!. <a href="http://research.microsoft.com/en-us/um/redmond/projects/asirra/default.aspx" target="_blank">Read more and try a demo here.</a> You must have the cURL extension enabled in PHP to use this. There are no configuration options for Assira.', 'ust') ?></p>
-
-          <h3><?php _e('reCAPTCHA Options', 'ust') ?></h3>
-        	<p><?php _e('reCAPTCHA asks someone to retype two words scanned from a book to prove that they are a human. This verifies that they are not a spambot while also correcting the automatic scans of old books. So you get less spam, and the world gets accurately digitized books. Everybody wins! For details, visit the <a href="http://recaptcha.net/">reCAPTCHA website</a>.', 'ust') ?></p>
-          <p><?php _e('<strong>NOTE</strong>: Even if you don\'t use reCAPTCHA on the signup form, you should setup an API key anyway to prevent spamming from the splog review forms.', 'ust') ?></p>
-          <table class="form-table">
-            <tr valign="top">
-        		<th scope="row"><?php _e('Keys', 'ust') ?>*</th>
-        		<td>
-        			<?php _e('reCAPTCHA requires an API key for each domain, consisting of a "public" and a "private" key. You can sign up for a <a href="http://recaptcha.net/whyrecaptcha.html" target="_blank">free reCAPTCHA key</a>.', 'ust') ?>
-        			<br />
-        			<p class="re-keys">
-        				<!-- reCAPTCHA public key -->
-        				<label class="which-key" for="recaptcha_pubkey"><?php _e('Public Key:&nbsp;&nbsp;', 'ust') ?></label>
-        				<input name="recaptcha[pubkey]" id="recaptcha_pubkey" size="40" value="<?php echo stripslashes($ust_recaptcha['pubkey']); ?>" />
-        				<br />
-        				<!-- reCAPTCHA private key -->
-        				<label class="which-key" for="recaptcha_privkey"><?php _e('Private Key:', 'ust') ?></label>
-        				<input name="recaptcha[privkey]" id="recaptcha_privkey" size="40" value="<?php echo stripslashes($ust_recaptcha['privkey']); ?>" />
-        			</p>
-        	    </td>
-            </tr>
-          	<tr valign="top">
-        		<th scope="row"><?php _e('Theme:', 'ust') ?></th>
-          		<td>
-          			<!-- The theme selection -->
-          			<div class="theme-select">
-          			<select name="recaptcha[theme]" id="recaptcha_theme">
-          			<option value="red" <?php if($ust_recaptcha['theme'] == 'red'){echo 'selected="selected"';} ?>>Red</option>
-          			<option value="white" <?php if($ust_recaptcha['theme'] == 'white'){echo 'selected="selected"';} ?>>White</option>
-          			<option value="blackglass" <?php if($ust_recaptcha['theme'] == 'blackglass'){echo 'selected="selected"';} ?>>Black Glass</option>
-          			<option value="clean" <?php if($ust_recaptcha['theme'] == 'clean'){echo 'selected="selected"';} ?>>Clean</option>
-          			</select>
-          			</div>
-          		</td>
-          	</tr>
-  	        <tr valign="top">
-        		<th scope="row"><?php _e('Language:', 'ust') ?></th>
-          		<td>
-        				<select name="recaptcha[lang]" id="recaptcha_lang">
-        				<option value="en" <?php if($ust_recaptcha['lang'] == 'en'){echo 'selected="selected"';} ?>>English</option>
-        				<option value="nl" <?php if($ust_recaptcha['lang'] == 'nl'){echo 'selected="selected"';} ?>>Dutch</option>
-        				<option value="fr" <?php if($ust_recaptcha['lang'] == 'fr'){echo 'selected="selected"';} ?>>French</option>
-        				<option value="de" <?php if($ust_recaptcha['lang'] == 'de'){echo 'selected="selected"';} ?>>German</option>
-        				<option value="pt" <?php if($ust_recaptcha['lang'] == 'pt'){echo 'selected="selected"';} ?>>Portuguese</option>
-        				<option value="ru" <?php if($ust_recaptcha['lang'] == 'ru'){echo 'selected="selected"';} ?>>Russian</option>
-        				<option value="es" <?php if($ust_recaptcha['lang'] == 'es'){echo 'selected="selected"';} ?>>Spanish</option>
-        				<option value="tr" <?php if($ust_recaptcha['lang'] == 'tr'){echo 'selected="selected"';} ?>>Turkish</option>
-        				</select>
-          		</td>
-          	</tr>
-          </table>
-
-          <p class="submit">
-          <input type="submit" name="Submit" value="<?php _e('Save Changes', 'ust') ?>" />
-          </p>
-          </form>
-
-			<?php
-		break;
-
-		//---------------------------------------------------//
-		case "help":
-
-		  _e("<h3>The plugin works in 3 phases:</h3>
+	
+  $current_screen->add_help_tab( array(
+		'id'      => 'overview',
+		'title'   => __('Overview'),
+		'content' => __("<h3>The plugin works in 3 phases:</h3>
           <ol>
           <li><b>Signup prevention</b> - these measures are mainly to stop bots. User friendly error messages are shown to users if any of these prevent signup. They are all optional and include:</li>
             <ul style=\"margin-left:20px;\">
               <li><b>Limiting the number of signups per IP per 24 hours</b> (this can slow down human spammers too if the site clientele supports it. Probably not edublogs though as it caters to schools which may need to make a large number of blogs from one IP)</li>
               <li><b>Changing the signup page location every 24 hours</b> - this is one of the most effective yet still user-friendly methods to stop bots dead. </li>
-              <li><b>Human tests</b> - answering user defined questions, picking the cat pics, or recaptcha.</li>
+              <li><b>Human tests</b> - answering user defined questions, picking the cat pics, recaptcha, or Are You A Human PlayThru.</li>
+							<li><b>Pattern Matching</b> - checking site domains, titles, emails, or usernames against your defined set of regular expressions.</li>
             </ul>
           <li><b>The API</b> - when signup is complete (email activated) and blog is first created, or when a user publishes a new post it will send all kinds of blog and signup info to our premium server where we will rate it based on our secret ever-tweaking logic. Our API will then return a splog Certainty number (0%-100%). If that number is greater than the sensitivity preference you set in the settings (80% default) then the blog gets spammed. Since the blog was actually created, it will show up in the site admin still (as spammed) so you can unspam later if there was a mistake (and our API will learn from that).</li>
           <li><b>The Moderation Queue</b> - for existing blogs or blogs that get past other filters, the queue provides an ongoing way to monitor blogs and spam or flag them as valid (ignore) them more easily as they are updated with new posts. Also if a user tries to visit a blog that has been spammed, it will now show a user-friendly message and form to contact the admin for review if they think it was valid. The email contains links to be able to easily unspam or bring up the last posts. The entire queue is AJAX based so you can moderate blogs with incredible speed.</li>
@@ -2549,20 +1655,117 @@ function ust_admin_output() {
               <li><b>Recent Splogs</b> - this is simply a list of all blogs that have been spammed on the site ever, in order of the time they were spammed. The idea here is that if you make a mistake you can come back here to undo. Also if a user complains that a valid blog was spammed, you can quickly pull it up here and see previews of the latest posts to confirm (normally you wouldn't be able to see blog content at all).</li>
               <li><b>Ignored Blogs</b> - If a valid blog shows up in the suspect list, simply mark it as ignored to get it out of there. It will then show in the ignored list just in case you need to undo.</li>
             </ul>
-          </ol>", 'ust');
-        echo '<p style="text-align:center;"><img src="'.WP_PLUGIN_URL.'/anti-splog/includes/anti-splog.gif" /></p>';
-
-		break;
-
-
-	} //end switch
-
-	//hook to extend admin screen. Check $_GET['tab'] for new tab
-	do_action('ust_add_screen');
-
-	echo '</div>';
+          </ol>", 'ust') . 
+        '<p style="text-align:center;"><img src="'.WP_PLUGIN_URL.'/anti-splog/includes/anti-splog.gif" /></p>'
+	) );
+	
+	$domain = $current_site->domain;
+	$register_url = "http://premium.wpmudev.org/wp-admin/profile.php?page=ustapi&amp;domain=$domain";
+	
+	get_current_screen()->set_help_sidebar(
+	'<p><strong>' . __( 'For more information:' ) . '</strong></p>' .
+	'<p><a href="http://premium.wpmudev.org/project/anti-splog/" target="_blank">' . __( 'Usage Instructions', 'ust' ) . '</a></p>' .
+	'<p><a href="'.$register_url.'" target="_blank">' . __( 'Register Site', 'ust' ) . '</a></p>'
+	);
 }
 
+function ust_test_regex() {
+	global $wpdb;
+	
+	$response = '';
+	
+	if ( false === @preg_match(stripslashes($_POST['regex']), 'thisisjustateststring') )
+		die( json_encode( array( 'status' => 0, 'data' => __('Please enter a valid PCRE Regular Expression with delimiters.', 'ust') ) ) );
+	
+	if ($_POST['type'] == 'domain') {
+		
+		$domains = $wpdb->get_col("SELECT SUBSTRING_INDEX(domain, '.', 1) as domain FROM $wpdb->blogs ORDER BY registered DESC LIMIT 10000");
+		$result = preg_grep(stripslashes($_POST['regex']), $domains);
+		if ( count($result) ) {
+			$response = '<ul>';
+			$i = 1;
+			foreach ($result as $value) {
+				if ($i >= 50) {
+					$response .= '<li><em>' . sprintf(__('%s results not shown...', 'ust'), number_format_i18n(count($result) - $i)) . '</em></li>';
+					break;
+				}
+				$response .= '<li>' . $value . '</li>';
+				$i++;
+			}
+			$response .= '</ul>';
+		} else {
+			$response = __('Your test search returned no results out of the last 10,000 registered domains.', 'ust');
+		}
+		die( json_encode( array( 'status' => 1, 'data' => $response ) ) );
+		
+	} else if ($_POST['type'] == 'username') {
+		
+		$users = $wpdb->get_col("SELECT user_login FROM $wpdb->users ORDER BY user_registered DESC LIMIT 10000");
+		$result = preg_grep(stripslashes($_POST['regex']), $users);
+		if ( count($result) ) {
+			$response = '<ul>';
+			$i = 1;
+			foreach ($result as $value) {
+				if ($i >= 50) {
+					$response .= '<li><em>' . sprintf(__('%s results not shown...', 'ust'), number_format_i18n(count($result) - $i)) . '</em></li>';
+					break;
+				}
+				$response .= '<li>' . $value . '</li>';
+				$i++;
+			}
+			$response .= '</ul>';
+		} else {
+			$response = __('Your test search returned no results out of the last 10,000 registered users.', 'ust');
+		}
+		die( json_encode( array( 'status' => 1, 'data' => $response ) ) );
+		
+	} else if ($_POST['type'] == 'email') {
+		
+		$users = $wpdb->get_col("SELECT user_email FROM $wpdb->users ORDER BY user_registered DESC LIMIT 10000");
+		$result = preg_grep(stripslashes($_POST['regex']), $users);
+		if ( count($result) ) {
+			$response = '<ul>';
+			$i = 1;
+			foreach ($result as $value) {
+				if ($i >= 50) {
+					$response .= '<li><em>' . sprintf(__('%s results not shown...', 'ust'), number_format_i18n(count($result) - $i)) . '</em></li>';
+					break;
+				}
+				$response .= '<li>' . $value . '</li>';
+				$i++;
+			}
+			$response .= '</ul>';
+		} else {
+			$response = __('Your test search returned no results out of the last 10,000 registered users.', 'ust');
+		}
+		die( json_encode( array( 'status' => 1, 'data' => $response ) ) );
+		
+	} else {
+		die( json_encode( array( 'status' => 0, 'data' => __('Sorry, you may not do live tests on site titles.', 'ust') ) ) );
+	}
+}
+
+//------------------------------------------------------------------------//
+
+//---Page Output Functions------------------------------------------------//
+
+//------------------------------------------------------------------------//
+
+function ust_admin_moderate() {
+	require_once( dirname(__FILE__) . '/includes/admin_templates/moderate.php' );
+}
+
+function ust_admin_stats() {
+	require_once( dirname(__FILE__) . '/includes/admin_templates/stats.php' );
+}
+
+function ust_admin_patterns() {
+	require_once( dirname(__FILE__) . '/includes/admin_templates/patterns.php' );
+}
+
+function ust_admin_settings() {
+	require_once( dirname(__FILE__) . '/includes/admin_templates/settings.php' );
+}
 
 class UST_Widget extends WP_Widget {
 
@@ -2601,7 +1804,7 @@ class UST_Widget extends WP_Widget {
     $instance = wp_parse_args( (array) $instance, array( 'title' => __('Splog Statistics', 'ust') ) );
 		$title = strip_tags($instance['title']);
   ?>
-			<p><label for="<?php echo $this->get_field_id('title'); ?>"><?php _e('Title:', 'ust') ?> <input class="widefat" id="<?php echo $this->get_field_id('title'); ?>" name="<?php echo $this->get_field_name('title'); ?>" type="text" value="<?php echo attribute_escape($title); ?>" /></label></p>
+<p><label for="<?php echo $this->get_field_id('title'); ?>"><?php _e('Title:', 'ust') ?> <input class="widefat" id="<?php echo $this->get_field_id('title'); ?>" name="<?php echo $this->get_field_name('title'); ?>" type="text" value="<?php echo attribute_escape($title); ?>" /></label></p>
 	<?php
 	}
 }

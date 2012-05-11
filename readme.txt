@@ -1,9 +1,9 @@
 === Anti-Splog ===
-Contributors: WPMUDEV
+Contributors: WPMUDEV, uglyrobot
 Tags: splog, splogs, spam, multisite, buddypress, signup, captcha, wpmu
-Requires at least: 3.1
-Tested up to: 3.1
-Stable tag: 1.1.1
+Requires at least: 3.2
+Tested up to: 3.4
+Stable tag: 2.0
 
 The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress, from WPMU DEV.
 
@@ -29,6 +29,7 @@ And if all that wasn't enough, we include an incredibly well thought out moderat
 	* *Limiting the number of signups per IP per 24 hours* - this can slow down human spammers too if the site clientele supports it.
 	* *Changing the signup page location every 24 hours* - this is one of the most effective yet still user-friendly methods to stop bots dead.
 	* *Human tests* - answering random user defined questions, picking the cat pics, or reCAPTCHA. (see screenshots)
+	* *Pattern Matching* - *NEW!* checking site domains, titles, or usernames against your defined set of regular expressions.
 
 2. **The API** - when signup is complete (email activated) and a blog is first created, or when a user publishes a new post it will send all kinds of blog and signup info to our premium server where we will rate it based on our secret ever-tweaking logic. Our API will return a splog Certainty number (0%-100%). If that number is greater than the sensitivity preference you set in the settings (80% default) then the blog gets spammed. Since the blog was actually created, it will still show up in the super admin area (as spammed) so you can unspam later if there was a mistake (and our API will learn from that). Note that this service requires an API key.
 3. **The Moderation Queue** - for existing blogs or blogs that get past other filters, the queue provides an ongoing way to monitor blogs and spam or flag them as valid (ignore) them more easily as they are updated with new posts. Also if a user tries to visit a blog that has been spammed, it will now show a user-friendly message and form to contact the admin for review if they think it was valid. The email contains links to be able to easily unspam or bring up the last posts. The entire queue is AJAX based so you can moderate blogs with incredible speed, not having to wait for the page to reload on every action. Click an action link (like spam) and it flashes and instantly disappears!
@@ -89,8 +90,18 @@ We provide comprehensive and guaranteed support on the <a href='http://premium.w
 11. Instant full blog previews
 12. Splog review form
 13. Anti-splog process Flowchart
+14. Site/Splog creation statistics
 
 == Changelog ==
+
+= 2.0 =
+* Refreshed menu structure and admin screens
+* New Pattern Matching functionality to block bots by signup patterns
+* New Are You A Human PlayThru game captcha
+* New blog and slog creation stats screen with pretty graphs
+* Add tags to API call for more accurate classification
+* Add splogging command capability to admin toolbar
+* Fixed various bugs/notices
 
 = 1.1.1 =
 * Fix UN notice
