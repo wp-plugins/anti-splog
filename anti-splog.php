@@ -997,7 +997,7 @@ function ust_http_post($action='api_check', $request=false) {
 
 function ust_check_api() {
   global $current_site, $ust_admin_url;
-  $ust_url = $ust_admin_url . "&tab=settings";
+  $ust_url = $ust_admin_url . "-settings";
 
   //check the api key and connection
   $api_response = ust_http_post();
@@ -1362,7 +1362,7 @@ function ust_api_warning() {
   $ust_settings = get_site_option("ust_settings");
   $expire = get_site_option("ust_key_dismiss");
   if (!$ust_settings['api_key'] && !isset($_GET['dismiss']) && !($expire && $expire > time()))
-    echo "<div id='ust-warning' class='error fade'><p>".sprintf(__('Anti-Splog is not fully enabled. You must <a href="%1$s">enter your WPMU DEV Premium API key</a> to enable the powerful blog and signup checking. <a href="%2$s">More info&raquo;</a>', 'ust'), "$ust_admin_url&tab=settings", 'http://premium.wpmudev.org/project/anti-splog'). ' <a style="float:right;" title="'.__('Dismiss this notice for one month', 'ust').'" href="' . $ust_admin_url . '&tab=settings&dismiss=1"><small>'.__('Dismiss', 'ust')."</small></a></p></div>";
+    echo "<div id='ust-warning' class='error fade'><p>".sprintf(__('Anti-Splog is not fully enabled. You must <a href="%1$s">enter your WPMU DEV Premium API key</a> to enable the powerful blog and signup checking. <a href="%2$s">More info&raquo;</a>', 'ust'), "$ust_admin_url-settings", 'http://premium.wpmudev.org/project/anti-splog'). ' <a style="float:right;" title="'.__('Dismiss this notice for one month', 'ust').'" href="' . $ust_admin_url . '-settings&dismiss=1"><small>'.__('Dismiss', 'ust')."</small></a></p></div>";
 }
 
 function ust_wpsignup_url($echo=true) {
