@@ -499,7 +499,7 @@ switch( $tab ) {
 		$page_link = ($apage > 1) ? '&amp;apage='.$apage : '';
 		?>
 
-		<form id="form-blog-list" action="edit.php?action=allblogs" method="post">
+		<form id="form-blog-list" action="sites.php?action=allblogs" method="post">
 
 		<div class="tablenav">
 			<?php if ( $blog_navigation ) echo "<div class='tablenav-pages'>$blog_navigation</div>"; ?>
@@ -550,7 +550,8 @@ switch( $tab ) {
 			<tbody id="the-list">
 			<?php
 			if ($blog_list) {
-				$bgcolor = $class = '';
+				$bgcolor = $class = '';		
+				$preview_id = 0;
 				foreach ($blog_list as $blog) {
 					$class = ('alternate' == $class) ? '' : 'alternate';
 
@@ -576,7 +577,7 @@ switch( $tab ) {
 									<?php
 									$controlActions	= array();
 									$controlActions[]	= '<a class="delete ust_unspam" href="'.$ust_admin_url.'&amp;tab=splogs'.$page_link.'&amp;unspam_blog=1&amp;id=' . $blog['blog_id'] . '&amp;updated=1&amp;updatedmsg=' . urlencode( __('Blog marked as not spam!', 'ust')).'">' . __('Not Spam') . '</a>';
-									$controlActions[]	= '<a class="delete" href="' . wp_nonce_url('edit.php?action=confirm&amp;action2=deleteblog&amp;id=' . $blog['blog_id'] . '&amp;msg=' . urlencode( sprintf( __( "You are about to delete the blog %s" ), $blogname ) ) . '&amp;updatedmsg=' . urlencode( __('Blog Deleted!', 'ust')), 'confirm').'">' . __("Delete") . '</a>';
+									$controlActions[]	= '<a class="delete" href="' . wp_nonce_url('sites.php?action=confirm&amp;action2=deleteblog&amp;id=' . $blog['blog_id'] . '&amp;msg=' . urlencode( sprintf( __( "You are about to delete the blog %s" ), $blogname ) ) . '&amp;updatedmsg=' . urlencode( __('Blog Deleted!', 'ust')), 'confirm').'">' . __("Delete") . '</a>';
 									?>
 
 									<?php if (count($controlActions)) : ?>

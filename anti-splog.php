@@ -5,7 +5,7 @@ Plugin URI: http://premium.wpmudev.org/project/anti-splog
 Description: The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress
 Author: Aaron Edwards (Incsub)
 Author URI: http://premium.wpmudev.org
-Version: 2.0
+Version: 2.0.1
 Network: true
 WDP ID: 120
 */
@@ -33,7 +33,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 //------------------------------------------------------------------------//
 
-$ust_current_version = '2.0';
+$ust_current_version = '2.0.1';
 $ust_api_url = 'http://premium.wpmudev.org/ust-api.php';
 
 //------------------------------------------------------------------------//
@@ -294,7 +294,7 @@ function ust_toolbar_menu() {
 	if ($reg_ip) {
 		$wp_admin_bar->add_menu(array(
 			'title' => sprintf(__('Splog IP: %s', 'ust'), $reg_ip),
-			'href' => network_admin_url('settings.php?page=ust&updated=1&id=' . $bloginfo->blog_id . '&spam_ip=' . $reg_ip),
+			'href' => network_admin_url('settings.php?page=ust&updated=1&id=' . $blog_id . '&spam_ip=' . $reg_ip),
 			'parent' => 'anti_splog',
 			'id' => 'ust_splog_by_ip',
 			'meta' => array (
@@ -517,10 +517,11 @@ function ust_wpsignup_shortcode($content) {
   //replace shortcodes in content
   $content = str_replace( '[ust_wpsignup_url]', ust_wpsignup_url(false), $content );
 	
+  $ust_signup = get_site_option('ust_signup');
+	
 	$new_slug = defined('UST_OVERRIDE_SIGNUP_SLUG') ? UST_OVERRIDE_SIGNUP_SLUG : $ust_signup['slug'];
 	
   //replace unchanged wp-signup.php calls too
-  $ust_signup = get_site_option('ust_signup');
   if ($ust_signup['active'])
     $content = str_replace( 'wp-signup.php', trailingslashit($new_slug), $content );
 

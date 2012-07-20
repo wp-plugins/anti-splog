@@ -2,8 +2,8 @@
 Contributors: WPMUDEV, uglyrobot
 Tags: splog, splogs, spam, multisite, buddypress, signup, captcha, wpmu
 Requires at least: 3.2
-Tested up to: 3.4
-Stable tag: 2.0
+Tested up to: 3.4.1
+Stable tag: 2.0.1
 
 The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress, from WPMU DEV.
 
@@ -93,6 +93,10 @@ We provide comprehensive and guaranteed support on the <a href='http://premium.w
 14. Site/Splog creation statistics
 
 == Changelog ==
+
+= 2.0.1 =
+* Fix some PHP notices
+* Fix blog deletion links on moderation lists
 
 = 2.0 =
 * Refreshed menu structure and admin screens
