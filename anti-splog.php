@@ -812,7 +812,8 @@ function ust_user_deleted($user_id) {
 
 function ust_blog_updated($blog_id) {
   global $wpdb, $current_user;
-  $wpdb->query("UPDATE `" . $wpdb->base_prefix . "ust` SET last_user_id = '".$current_user->ID."', last_ip = '".$_SERVER['REMOTE_ADDR']."', last_user_agent = '".addslashes($_SERVER['HTTP_USER_AGENT'])."' WHERE blog_id = '$blog_id' LIMIT 1");
+	if (!empty($current_user->ID))
+		$wpdb->query("UPDATE `" . $wpdb->base_prefix . "ust` SET last_user_id = '".$current_user->ID."', last_ip = '".$_SERVER['REMOTE_ADDR']."', last_user_agent = '".addslashes($_SERVER['HTTP_USER_AGENT'])."' WHERE blog_id = '$blog_id' LIMIT 1");
 }
 
 function ust_plug_pages() {
