@@ -94,6 +94,9 @@ We provide comprehensive and guaranteed support on the <a href='http://premium.w
 
 == Changelog ==
 
+= 2. =
+* Update recaptcha api urls
+
 = 2.1.1 =
 * Fix divide by zero errors when IP blocking
 
