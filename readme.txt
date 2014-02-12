@@ -2,7 +2,7 @@
 Contributors: WPMUDEV, uglyrobot
 Tags: splog, splogs, spam, multisite, buddypress, signup, captcha, wpmu
 Requires at least: 3.3
-Tested up to: 3.5.1
+Tested up to: 3.8.1
 Stable tag: 2.1.1
 
 The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress, from WPMU DEV.
@@ -10,7 +10,7 @@ The ultimate plugin and service to stop and kill splogs in WordPress Multisite a
 == Description ==
 
 This is the plugin every Wordpress Multisite or Buddypress admin has been waiting for! Announcing Anti-Splog, the ultimate plugin and service to stop and kill splogs in WordPress Multisite
-[youtube http://www.youtube.com/watch?v=4BR1ai2w-B0&hd=1]
+[youtube http://www.youtube.com/watch?v=xHBH39rd7Vw&hd=1]
 
 This plugin goes way beyond any existing splog plugin for Multisite because at its core is the new Anti-Splog API service hosted at WPMU DEV Premium. This means that Anti-Splog not only prevents/limits bots, it also identifies human and existing spammers automatically and with great efficiency.
 
