@@ -4,7 +4,7 @@
  *    - Documentation and latest version
  *          http://recaptcha.net/plugins/php/
  *    - Get a reCAPTCHA API Key
- *          https://www.google.com/recaptcha/admin/create
+ *          http://recaptcha.net/api/getkey
  *    - Discussion group
  *          http://groups.google.com/group/recaptcha
  *
@@ -272,3 +272,6 @@ function rp_recaptcha_mailhide_html($pubkey, $privkey, $email) {
 		"' onclick=\"window.open('" . htmlentities ($url) . "', '', 'toolbar=0,scrollbars=0,location=0,statusbar=0,menubar=0,resizable=0,width=500,height=300'); return false;\" title=\"Reveal this e-mail address\">...</a>@" . htmlentities ($emailparts [1]);
 
 }
+
+
+?>
