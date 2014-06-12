@@ -1,17 +1,18 @@
 <?php
 /*
 Plugin Name: Anti-Splog
-Plugin URI: http://premium.wpmudev.org/project/anti-splog
+Plugin URI: https://premium.wpmudev.org/project/anti-splog/
 Description: The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress
-Author: Aaron Edwards (Incsub)
-Author URI: http://premium.wpmudev.org
-Version: 2.1.1
+Author: WPMU DEV
+Author URI: http://premium.wpmudev.org/
+Version: 2.1.2
 Network: true
-
+WDP ID: 120
 */
 
 /*
-Copyright 2010-2013 Incsub (http://incsub.com)
+Copyright 2010-2014 Incsub (http://incsub.com)
+Author: Aaron Edwards
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License (Version 2 - GPLv2) as published by
@@ -33,7 +34,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 //------------------------------------------------------------------------//
 
-$ust_current_version = '2.1.1';
+$ust_current_version = '2.1.2';
 $ust_api_url = 'http://premium.wpmudev.org/ust-api.php';
 
 //------------------------------------------------------------------------//
@@ -545,7 +546,7 @@ function ust_blog_spammed($blog_id) {
     $blogusers = get_users_of_blog($blog_id);
     if ($blogusers) {
       foreach ($blogusers as $bloguser) {
-        if (!is_super_admin($bloguser->user_login))
+        if (!is_super_admin($bloguser->user_id))
           update_user_status($bloguser->user_id, "spam", '1');
       }
     }
@@ -813,7 +814,7 @@ function ust_user_deleted($user_id) {
 function ust_blog_updated($blog_id) {
   global $wpdb, $current_user;
 	if (!empty($current_user->ID))
-		$wpdb->query("UPDATE `" . $wpdb->base_prefix . "ust` SET last_user_id = '".$current_user->ID."', last_ip = '".$_SERVER['REMOTE_ADDR']."', last_user_agent = '".addslashes($_SERVER['HTTP_USER_AGENT'])."' WHERE blog_id = '$blog_id' LIMIT 1");
+		$wpdb->query("UPDATE `" . $wpdb->base_prefix . "ust` SET last_user_id = '".$current_user->ID."', last_ip = '".$_SERVER['REMOTE_ADDR']."', last_user_agent = '".esc_sql($_SERVER['HTTP_USER_AGENT'])."' WHERE blog_id = '$blog_id' LIMIT 1");
 }
 
 function ust_plug_pages() {
@@ -857,7 +858,7 @@ function ust_do_ajax() {
 
 	  //don't spam site admin
 		$user_info = get_userdata((int)$_GET['spam_user']);
-		if (!is_super_admin($user_info->user_login)) {
+		if (!is_super_admin($user_info->ID)) {
   		$blogs = get_blogs_of_user( (int)$_GET['spam_user'], true );
   		foreach ( (array) $blogs as $key => $details ) {
   			if ( $details->userblog_id == $current_site->blog_id ) { continue; } // main blog not a spam !
@@ -871,7 +872,7 @@ function ust_do_ajax() {
 	  //count all blogs created or modified with the IP address
 	  $ip_query = parse_url($_POST['check_ip']);
     parse_str($ip_query['query'], $ip_data);
-	  $spam_ip = addslashes($ip_data['spam_ip']);
+	  $spam_ip = esc_sql($ip_data['spam_ip']);
 
 	  $query = "SELECT COUNT(b.blog_id)
         				FROM {$wpdb->blogs} b, {$wpdb->registration_log} r, {$wpdb->base_prefix}ust u
@@ -892,7 +893,7 @@ function ust_do_ajax() {
 
 	} else if ( isset($_GET['spam_ip']) ) {
 	  //spam all blogs created or modified with the IP address
-	  $spam_ip = addslashes($_GET['spam_ip']);
+	  $spam_ip = esc_sql($_GET['spam_ip']);
 	  $query = "SELECT b.blog_id
         				FROM {$wpdb->blogs} b, {$wpdb->registration_log} r, {$wpdb->base_prefix}ust u
         				WHERE b.site_id = '{$wpdb->siteid}'
@@ -1826,4 +1827,7 @@ class UST_Widget extends WP_Widget {
 	}
 }
 
+//load dashboard notice
+global $wpmudev_notices;
+$wpmudev_notices[] = array( 'id'=> 120,'name'=> 'Anti-Splog', 'screens' => array( 'toplevel_page_ust-network', 'anti-splog_page_ust-stats-network', 'anti-splog_page_ust-patterns-network', 'anti-splog_page_ust-settings-network' ) );
 //include_once( dirname( __FILE__ ) . '/includes/wpmudev-dash-notification.php' );
