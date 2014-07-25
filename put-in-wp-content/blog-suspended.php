@@ -64,15 +64,19 @@ if (isset($_POST['spam-submit']) && !get_option('ust_email_sent')) {
 $auto_spammed = get_option('ust_auto_spammed');
 
 ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE html>
+<!--[if IE 8]>
+<html xmlns="http://www.w3.org/1999/xhtml" class="ie8" <?php language_attributes(); ?>>
+<![endif]-->
+<!--[if !(IE 8) ]><!-->
 <html xmlns="http://www.w3.org/1999/xhtml" <?php language_attributes(); ?>>
+<!--<![endif]-->
 <head>
-	<title><?php echo $current_site->site_name; ?> &rsaquo; <?php _e('Blog Spammed') ?></title>
 	<meta http-equiv="Content-Type" content="<?php bloginfo('html_type'); ?>; charset=<?php bloginfo('charset'); ?>" />
+	<title><?php echo $current_site->site_name; ?> &rsaquo; <?php _e('Blog Spammed') ?></title>
 	<meta name="robots" content="noindex, nofollow" />
 	<?php
 	wp_admin_css( 'login', true );
-	wp_admin_css( 'colors-fresh', true );
 
 	if ( $is_iphone ) {
 	?>

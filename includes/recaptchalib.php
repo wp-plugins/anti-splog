@@ -159,7 +159,7 @@ function rp_recaptcha_check_answer ($privkey, $remoteip, $challenge, $response, 
 		die ("For security reasons, you must pass the remote ip to reCAPTCHA");
 	}
 
-	
+
 	
         //discard spam submissions
         if ($challenge == null || strlen($challenge) == 0 || $response == null || strlen($response) == 0) {
@@ -169,7 +169,7 @@ function rp_recaptcha_check_answer ($privkey, $remoteip, $challenge, $response, 
                 return $recaptcha_response;
         }
 
-        $response = _rp_recaptcha_http_post (RECAPTCHA_VERIFY_SERVER, "/verify",
+        $response = _rp_recaptcha_http_post (RECAPTCHA_VERIFY_SERVER, "/recaptcha/api/verify",
                                           array (
                                                  'privatekey' => $privkey,
                                                  'remoteip' => $remoteip,
