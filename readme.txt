@@ -1,9 +1,9 @@
 === Anti-Splog ===
 Contributors: WPMUDEV, uglyrobot
 Tags: splog, splogs, spam, multisite, buddypress, signup, captcha, wpmu
-Requires at least: 3.3
+Requires at least: 3.8
 Tested up to: 4.0
-Stable tag: 2.1.3
+Stable tag: trunk
 
 The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress, from WPMU DEV.
 
@@ -93,6 +93,9 @@ We provide comprehensive and guaranteed support on the <a href='http://premium.w
 14. Site/Splog creation statistics
 
 == Changelog ==
+
+= 2.1.4 =
+* Fix: Update blog-suspended.php template to work with ultimate branding logos
 
 = 2.1.3 =
 * Fix: reCaptcha API endpoint changed by Google
