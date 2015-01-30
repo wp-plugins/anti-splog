@@ -5,13 +5,13 @@ Plugin URI: https://premium.wpmudev.org/project/anti-splog/
 Description: The ultimate plugin and service to stop and kill splogs in WordPress Multisite and BuddyPress
 Author: WPMU DEV
 Author URI: http://premium.wpmudev.org/
-Version: 2.1.4
+Version: 2.1.5
 Network: true
 WDP ID: 120
 */
 
 /*
-Copyright 2010-2014 Incsub (http://incsub.com)
+Copyright 2010-2015 Incsub (http://incsub.com)
 Author: Aaron Edwards
 
 This program is free software; you can redistribute it and/or modify
@@ -34,7 +34,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 //------------------------------------------------------------------------//
 
-$ust_current_version = '2.1.4';
+$ust_current_version = '2.1.5';
 $ust_api_url         = 'http://premium.wpmudev.org/ust-api.php';
 
 //------------------------------------------------------------------------//
@@ -1588,6 +1588,18 @@ function ust_signup_fields( $errors ) {
 		?>
 		<script type="text/javascript">jQuery(document).ready(function ($) {
 				$('input.submit').attr('name', 'submit_site');
+            <?php
+            //Add a 'submit' input field for compatibility when BP and Site tracking component are active.
+            if(function_exists('bp_is_active') && bp_is_active('blogs')):
+            ?>
+                $('<input>').attr({
+                    type: 'hidden',
+                    id: 'submit',
+                    name: 'submit'
+                }).appendTo('#setupform');
+                <?php
+                endif;
+                ?>
 			});</script>
 	<?php
 	}
@@ -1657,12 +1669,13 @@ function ust_signup_fields_bp() {
 			$salt       = get_site_option( "ust_salt" );
 			$datesalt   = strtotime( date( 'Y-m-d H:00:00' ) );
 			$field_name = 'qa_' . md5( $qkey . $salt . $datesalt );
+			$field_value = isset($_POST[ $field_name ]) ? esc_attr( $_POST[ $field_name ] ) : '';
 
 			echo '<div class="register-section" id="antisplog">';
 			echo '<label>' . __( 'Human Verification:', 'ust' ) . '</label>';
 			do_action( 'bp_qa_errors' );
 			echo stripslashes( $ust_qa[ $qkey ][0] );
-			echo '<br /><input type="text" id="qa" name="' . $field_name . '" value="' . htmlentities( $_POST[ $field_name ] ) . '" />';
+			echo '<br /><input type="text" id="qa" name="' . $field_name . '" value="' . $field_value . '" />';
 			echo '<br /><small>' . __( 'NOTE: Answers are not case sensitive.', 'ust' ) . '</small>';
 			echo '</div>';
 		}
